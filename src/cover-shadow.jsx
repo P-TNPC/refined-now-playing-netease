@@ -1,4 +1,4 @@
-import { getSetting } from './utils.js';
+import { getSetting } from './utils.jsx';
 const useState = React.useState;
 const useEffect = React.useEffect;
 

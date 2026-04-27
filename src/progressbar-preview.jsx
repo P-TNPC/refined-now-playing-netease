@@ -1,5 +1,5 @@
 import './progressbar-preview.scss';
-import { getSetting } from './utils.js';
+import { getSetting } from './utils.jsx';
 
 const isFMSession = () => {
 	return !document.querySelector(".m-player-fm").classList.contains("f-dn");

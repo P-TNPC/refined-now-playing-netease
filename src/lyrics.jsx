@@ -1,5 +1,5 @@
-import './lyric-provider.js';
-import { getSetting, setSetting, copyTextToClipboard } from './utils.js';
+import './lyric-provider.jsx';
+import { getSetting, setSetting, copyTextToClipboard } from './utils.jsx';
 import { showContextMenu } from './context-menu';
 import './lyrics.scss';
 
