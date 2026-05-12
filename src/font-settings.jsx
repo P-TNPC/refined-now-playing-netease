@@ -17,7 +17,7 @@ const useState = React.useState;
 
 export function FontSettings(props) {
 	const [fontList, setFontList] = useState([]);
-	const [fontFamily, setFontFamily] = useState(JSON.parse(getSetting('font-family', '[]')));
+	const [fontFamily, setFontFamily] = useState(getSetting('font-family', []));
 	
 	useEffect(() => {
 		async function getFontList() {
@@ -40,7 +40,7 @@ export function FontSettings(props) {
 				font-family: ${fontFamily.length ? fontFamily.map(font => `'${font}'`).join(', ') : 'inherit'} !important;
 			}
 		`;
-		setSetting('font-family', JSON.stringify(fontFamily));
+		setSetting('font-family', fontFamily);
 	}, [fontFamily]);
 
 	return (

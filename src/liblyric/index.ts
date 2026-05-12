@@ -1,42 +1,43 @@
-import { findLast } from "lodash";
-
 export interface DynamicLyricWord {
 	time: number;
 	duration: number;
 	flag: number;
 	word: string;
-	isCJK?: boolean;
-	endsWithSpace?: boolean;
-	trailing?: boolean;
+	isCJK: boolean;
+	endsWithSpace: boolean;
+	trailing: boolean;
 }
 
-export interface LyricLine {
+export interface BaseLyricLine {
 	time: number;
-	duration: number;
-	originalLyric: string;
+	unsynced: boolean;
 	translatedLyric?: string;
 	romanLyric?: string;
 	rawLyric?: string;
+}
+
+export interface LyricLine extends BaseLyricLine {
+	duration: number;
+	isInterlude: boolean;
+	originalLyric: string;
 	dynamicLyricTime?: number;
 	dynamicLyric?: DynamicLyricWord[];
 }
 
-export interface LyricPureLine {
-	time: number;
+export interface LyricPureLine extends BaseLyricLine {
 	lyric: string;
 	originalLyric?: string;
-	translatedLyric?: string;
-	romanLyric?: string;
-	rawLyric?: string;
-	unsynced?: boolean;
 }
 
+export type BothLyricLine = LyricLine | LyricPureLine;
 
-export const PURE_MUSIC_LYRIC_LINE = [
+const PURE_MUSIC_LYRIC_LINE: LyricLine[] = [
 	{
 		time: 0,
 		duration: 5940000,
-		originalLyric: "纯音乐，请欣赏",
+		originalLyric: '纯音乐，请欣赏',
+		unsynced: false,
+		isInterlude: false,
 	},
 ];
 
@@ -47,561 +48,483 @@ export const PURE_MUSIC_LYRIC_DATA = {
 	needDesc: true,
 	lrc: {
 		version: 1,
-		lyric: "[99:00.00]纯音乐，请欣赏\n",
+		lyric: '[99:00.00]纯音乐，请欣赏\n',
 	},
 	code: 200,
 	briefDesc: null,
 };
 
+// 作用域隔离正则
+const BLANK_REGEX = /^\s*$/;
+const ENDS_WITH_SPACE_REGEX = /\s$/;
+const STARTS_WITH_SPACE_REGEX = /^\s/;
+const PUNCTUATION_REGEX = /[\p{P}\p{S}]/u;
+const LATIN_CONTRACTION_REGEX = /[a-zA-Z]+['’][a-zA-Z]*/u;
+const LATIN_SENTENCE_REGEX = /^[\s\w\p{sc=Latin}\p{P}\p{S}]+$/u;
+const TRAILING_PUNCTUATION_REGEX = /[.,，。!?？、；：…—~～·‘’“”ﾞ]$/u;
+const CJK_REGEX = /[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}\p{sc=Hangul}]/u;
 
-const simularityCache: Record<string, number> = {};
-function calcSimularity(a: string, b: string) {
-	if (typeof(a) === "undefined") a = "";
-	if (typeof(b) === "undefined") b = "";
-	const key = `${a}::${b}`;
-	if (simularityCache[key] !== undefined) {
-		return simularityCache[key];
-	}
-	const m = a.length;
-	const n = b.length;
-	const d: number[][] = [];
-	for (let i = 0; i <= m; i++) {
-		d[i] = [];
-		d[i][0] = i;
-	}
-	for (let j = 0; j <= n; j++) {
-		d[0][j] = j;
-	}
-	for (let i = 1; i <= m; i++) {
-		for (let j = 1; j <= n; j++) {
-			if (a[i - 1] === b[j - 1]) {
-				d[i][j] = d[i - 1][j - 1];
-			} else {
-				d[i][j] = Math.min(d[i - 1][j - 1] + 1, d[i][j - 1] + 1, d[i - 1][j] + 1);
-			}
-		}
-	}
-	return d[m][n];
-}
+const isBlank = (str: string) => BLANK_REGEX.test(str);
+const isLatinSentence = (str: string) => LATIN_SENTENCE_REGEX.test(str);
+const isLatinContraction = (str: string) => LATIN_CONTRACTION_REGEX.test(str);
+const hasPunctuation = (str: string) => PUNCTUATION_REGEX.test(str);
+const hasTrailingPunctuation = (str: string) => TRAILING_PUNCTUATION_REGEX.test(str);
+const hasCJK = (str: string) => CJK_REGEX.test(str);
+const startsWithSpace = (str: string) => STARTS_WITH_SPACE_REGEX.test(str);
+const endsWithSpace = (str: string) => ENDS_WITH_SPACE_REGEX.test(str);
 
-
-const isEnglishSentense = (str: string) => {
-	if (str.replace(/[\p{P}\p{S}]/gu, '').match(/^[\s\w\u00C0-\u024F]+$/u)) {
-		return true;
-	}
-	return false;
-}
-const replaceChineseSymbolsToEnglish = (str: string) => {
-	return str.replace(/[‘’′]/g, '\'')
-			 .replace(/[“”″]/g, '"')
-			 .replace(/（/g, '(')
-			 .replace(/）/g, ')')
-			 .replace(/，/g, ',')
-			 .replace(/！/g, '!')
-			 .replace(/？/g, '?')
-			 .replace(/：/g, ':')
-			 .replace(/；/g, ';');
-}
+const PUNCTUATION_MAP: Record<string, string> = {
+	'‘': "'",
+	'’': "'",
+	'′': "'",
+	'“': '"',
+	'”': '"',
+	'″': '"',
+	'（': '(',
+	'）': ')',
+	'，': ',',
+	'！': '!',
+	'？': '?',
+	'：': ':',
+	'；': ';',
+};
+const NON_ASCII_PUNCTUATION_REGEX = /[‘’′“”″（），！？：；]/g;
+const normalizePunctuation = (str: string) => str.replace(NON_ASCII_PUNCTUATION_REGEX, match => PUNCTUATION_MAP[match]!);
 
 export function parseLyric(
 	original: string,
-	translated: string = "",
-	roman: string = "",
-	dynamic: string = "",
+	dynamic: string = '',
+	translation: string = '',
+	roman: string = '',
+	dynamicTranslation: string = '',
+	dynamicRoman: string = '',
 ): LyricLine[] {
-	if (dynamic.trim().length === 0) {
-		const result: LyricLine[] = parsePureLyric(original).map((v) => ({
-			time: v.time,
-			originalLyric: v.lyric,
-			duration: 0,
-			...(v.unsynced ? { unsynced: true } : {}),
-		}));
+	const editDistanceCache = new Map<string, number>();
 
-		parsePureLyric(translated).forEach((line) => {
-			const target = result.find((v) => v.time === line.time);
-			if (target) {
-				target.translatedLyric = line.lyric;
+	const MAX_LEN = 512;
+	const sharedBuffer = new Uint16Array(MAX_LEN);
+
+	function calcEditDistance(a = '', b = '') {
+		if (a.length > b.length || (a.length === b.length && a > b)) [a, b] = [b, a];
+
+		const key = `${a}\0${b}`;
+		const cached = editDistanceCache.get(key);
+		if (cached !== undefined) return cached;
+
+		const m = a.length;
+		const n = b.length;
+
+		const d = m + 1 <= MAX_LEN ? sharedBuffer : new Uint16Array(m + 1);
+
+		for (let i = 0; i <= m; i++) d[i] = i;
+		for (let j = 1; j <= n; j++) {
+			let preDiag = d[0]!;
+			d[0] = j;
+			for (let i = 1; i <= m; i++) {
+				const temp = d[i]!;
+				d[i] = a[i - 1] === b[j - 1] ? preDiag : 1 + Math.min(preDiag, d[i - 1]!, temp);
+				preDiag = temp;
 			}
-		});
+		}
+		const result = d[m]!;
 
-		parsePureLyric(roman).forEach((line) => {
-			const target = result.find((v) => v.time === line.time);
-			if (target) {
-				target.romanLyric = line.lyric;
-			}
-		});
+		editDistanceCache.set(key, result);
+		return result;
+	}
 
-		result.sort((a, b) => a.time - b.time);
+	if (isBlank(dynamic)) {
+		const originalLyrics = parsePureLyric(original);
+		const result: LyricLine[] = [];
 
-		// log("原始歌词解析", JSON.parse(JSON.stringify(result)));
+		const timeIndexMap = new Map<number, LyricLine>();
+		for (const v of originalLyrics) {
+			const line: LyricLine = {
+				time: v.time,
+				originalLyric: v.lyric,
+				duration: 0,
+				unsynced: v.unsynced,
+				isInterlude: false,
+			};
+			result.push(line);
+			if (!timeIndexMap.has(v.time)) timeIndexMap.set(v.time, line);
+		}
+
+		// 挂载翻译
+		for (const line of parsePureLyric(dynamicTranslation || translation)) {
+			const target = timeIndexMap.get(line.time);
+			if (target) target.translatedLyric = line.lyric;
+		}
+
+		// 挂载罗马音
+		for (const line of parsePureLyric(dynamicRoman || roman)) {
+			const target = timeIndexMap.get(line.time);
+			if (target) target.romanLyric = line.lyric;
+		}
 
 		const processed = processLyric(result);
+		for (let i = 0; i < processed.length - 1; i++) processed[i]!.duration = processed[i + 1]!.time - processed[i]!.time;
 
-		// log("处理完成歌词解析", JSON.parse(JSON.stringify(processed)));
+		return processed;
+	}
 
-		for (let i = 0; i < processed.length; i++) {
-			if (i < processed.length - 1) {
-				processed[i].duration = processed[i + 1].time - processed[i].time;
-			}
-		}
+	const processed = parsePureDynamicLyric(dynamic);
+	const originalLyrics = parsePureLyric(original);
 
-		return processLyric(result);
-	} else {
-		const processed = parsePureDynamicLyric(dynamic);
-
-		const originalLyrics = parsePureLyric(original);
-
-		const attachOriginalLyric = (lyric: LyricPureLine[]) => {
-			let attachMatchingMode = 'equal';
-
-			const lyricTimeSet = new Set(lyric.map((v) => v.time));
-			const originalLyricTimeSet = new Set(originalLyrics.map((v) => v.time));
-			const intersection = new Set([...lyricTimeSet].filter((v) => originalLyricTimeSet.has(v)));
-			if (intersection.size / lyricTimeSet.size < 0.1) {
-				attachMatchingMode = 'closest';
-			}
-
-			//console.log(JSON.parse(JSON.stringify(originalLyrics)), JSON.parse(JSON.stringify(lyric)));
-			originalLyrics.forEach((line) => {
-				//let target = findLast(lyric, (v) => v.time === line.time);
-				let target: LyricPureLine | null = null;
-				if (attachMatchingMode === 'equal') {
-					//target = findLast(lyric, (v) => v.time === line.time);
-					target = findLast(lyric, (v) => Math.abs(v.time - line.time) < 20)
-				} else {
-					lyric.forEach((v) => {
-						if (target) {
-							if (
-								Math.abs(target.time - line.time) > Math.abs(v.time - line.time)
-							) {
-								target = v;
-							}
-						} else {
-							target = v;
-						}
-					});
-				}
-					
-				//console.log(line, target);
-				/*if (!target) {
-					lyric.forEach((v) => {
-						if (target) {
-							if (
-								Math.abs(target.time - line.time) > Math.abs(v.time - line.time)
-							) {
-								target = v;
-							}
-						} else {
-							target = v;
-						}
-					});
-				}*/
-				if (target) {
-					target.originalLyric = target.originalLyric || "";
-					if (target.originalLyric.length > 0) {
-						target.originalLyric += " ";
-					}
-					target.originalLyric += line.lyric;
-				}
-			});
-			//console.log(JSON.parse(JSON.stringify(originalLyrics)), JSON.parse(JSON.stringify(lyric)));
-			return lyric;
-		}
-		const attachLyricToDynamic = (lyric: LyricPureLine[], field: string) => {
-			lyric.forEach((line, index) => {
-				let targetIndex = 0;
-				processed.forEach((v, index) => {
-					if (
-						Math.abs(processed[targetIndex].time - line.time) > Math.abs(v.time - line.time)
-					) {
-						targetIndex = index;
-					}
-				});
-				//console.log(line, index, targetIndex);
-				let sequence = [targetIndex];
-				for (let offset = 1; offset <= 5; offset++) {
-					if (targetIndex - offset >= 0) sequence.push(targetIndex - offset);
-					if (targetIndex + offset < processed.length) sequence.push(targetIndex + offset);
-				}/*
-				if (targetIndex - 1 >= 0) sequence.push(targetIndex - 1);
-				if (targetIndex + 1 < processed.length) sequence.push(targetIndex + 1);
-				if (targetIndex - 2 >= 0) sequence.push(targetIndex - 2);
-				if (targetIndex + 2 < processed.length) sequence.push(targetIndex + 2);*/
-
-				sequence = sequence.reverse();
-				
-				//console.log(sequence);
-
-				//let minSimilarity = 1000000000;
-				let minWeight = 1000000000;
-
-				for (let index of sequence) {
-					const v = processed[index];
-					const similarity = calcSimularity(line.originalLyric as string, v.originalLyric as string);
-					const weight = similarity * 1000 + (v[field] ? 1 : 0);
-					//console.log("similarity", similarity, line.originalLyric, v.originalLyric);
-					//console.log("weight", index, weight, line.originalLyric, v.originalLyric);
-					if (weight < minWeight) {
-						minWeight = weight;
-						targetIndex = index;
-					}
-				}
-
-				//console.log(targetIndex);
-
-				const target = processed[targetIndex];
-
-				//console.log(targetIndex, target);
-				target[field] = target[field] || "";
-				if (target[field].length > 0) {
-					target[field] += " ";
-				}
-				target[field] += line.lyric;
-			});
-		}
-
-		const translatedParsed = attachOriginalLyric(parsePureLyric(translated));
-		const romanParsed = attachOriginalLyric(parsePureLyric(roman));
-		const rawParsed = attachOriginalLyric(parsePureLyric(original));
-
-		//console.log("translatedParsed", JSON.parse(JSON.stringify(translatedParsed)));
-
-		attachLyricToDynamic(translatedParsed, 'translatedLyric');
-		attachLyricToDynamic(romanParsed, 'romanLyric');
-		attachLyricToDynamic(rawParsed, 'rawLyric');
-
-
-		//console.log("processed", JSON.parse(JSON.stringify(processed)));
-
-		// 插入空行
-		for (let i = 0; i < processed.length; i++) {
-			const thisLine = processed[i];
-			const nextLine = processed[i + 1];
-			if (
-				thisLine &&
-				nextLine &&
-				thisLine.originalLyric.trim().length > 0 &&
-				nextLine.originalLyric.trim().length > 0 &&
-				thisLine.duration > 0
+	// 挂载 rawLyric（双指针对齐）
+	if (originalLyrics.length > 0) {
+		let ptr = 0;
+		for (const { time, lyric } of originalLyrics) {
+			if (ptr >= processed.length) break;
+			while (
+				ptr + 1 < processed.length &&
+				Math.abs(processed[ptr + 1]!.time - time) <= Math.abs(processed[ptr]!.time - time)
 			) {
-				const thisLineEndTime =
-					(thisLine?.dynamicLyricTime || thisLine.time) + thisLine.duration;
-				let nextLineStartTime = nextLine.time;
-				if (
-					nextLine.dynamicLyricTime &&
-					nextLineStartTime > nextLine.dynamicLyricTime
-				) {
-					nextLineStartTime = nextLine.dynamicLyricTime;
-				}
-				if (nextLineStartTime - thisLineEndTime >= 5000) {
-					processed.splice(i + 1, 0, {
-						time: thisLineEndTime,
-						originalLyric: "",
-						duration: nextLineStartTime - thisLineEndTime,
-					});
-				}
+				ptr++;
 			}
-		}
-
-		//同步原文空格到逐字
-		for (let i = 0; i < processed.length; i++) {
-			const thisLine = processed[i];
-			let raw = thisLine.rawLyric?.trim() ?? "";
-			const dynamic = thisLine.dynamicLyric || [];
-
-			for (let j = 0; j < dynamic.length; j++) {
-				const thisWord = dynamic[j].word.trimEnd();
-				if (raw.startsWith(thisWord)) {
-					raw = raw.substring(thisWord.length);
-				} else {
-					break;
-				}
-				const match = raw.match(/^\s+/);
-				if (match) {
-					raw = raw.substring(match[0].length);
-					if (!dynamic[j].word.match(/\s$/)) {
-						dynamic[j].word += " ";
-					}
-				}
-			}
-		}
-
-		// 标记 CJK 字符和是否空格结尾
-		const CJKRegex = /([\p{Unified_Ideograph}|\u3040-\u309F|\u30A0-\u30FF])/gu;
-		for (let i = 0; i < processed.length; i++) {
-			const thisLine = processed[i];
-			const dynamic = thisLine.dynamicLyric || [];
-			for (let j = 0; j < dynamic.length; j++) {
-				if (dynamic[j]?.word?.match(CJKRegex)) {
-					dynamic[j].isCJK = true;
-				}
-				if (dynamic[j]?.word?.match(/\s$/)) {
-					dynamic[j].endsWithSpace = true;
-				}
-			}
-		}
-
-		// 标记尾部拖长音
-		// 尾部或每个空格之前的第一个非特殊符号字符，长度超过 1 秒
-		for (let i = 0; i < processed.length; i++) {
-			const thisLine = processed[i];
-			const dynamic = thisLine.dynamicLyric || [];
-			
-			const searchIndexes: number[] = [-1];
-			for (let j = 0; j < dynamic.length - 1; j++) {
-				if (dynamic[j]?.endsWithSpace || dynamic[j]?.word?.match(/[\,\.\，\。\!\?\？\、\；\：\…\—\~\～\·\‘\’\“\”\ﾞ]/)) {
-					if (!dynamic[j]?.word?.match(/[a-zA-Z]+(\'\‘\’)*[a-zA-Z]*/)) {
-						searchIndexes.push(j);
-					}
-				}
-			}
-			searchIndexes.push(dynamic.length - 1);
-
-			for (let j = searchIndexes.length - 1; j >= 1; j--) {
-				let targetIndex: number | null = null;
-				for (let k = searchIndexes[j]; k > searchIndexes[j - 1]; k--) {
-					const word = dynamic[k].word.trim();
-					// special chars and punctuations
-					if (word.match(/[\p{P}\p{S}]/gu)) {
-						continue;
-					}
-					// space
-					if (word.match(/^\s*$/)) {
-						continue;
-					}
-					targetIndex = k;
-					break;
-				}
-				if (targetIndex === null) {
-					continue;
-				}
-				const target = dynamic[targetIndex];
-				if (target.duration >= 1000) {
-					target.trailing = true;
-				}
-			}
-		}
-
-		return processLyric(processed);
-	}
-}
-
-const yrcLineRegexp = /^\[(?<time>[0-9]+),(?<duration>[0-9]+)\](?<line>.*)/;
-const yrcWordTimeRegexp =
-	/^\((?<time>[0-9]+),(?<duration>[0-9]+),(?<flag>[0-9]+)\)(?<word>[^\(]*)/;
-const timeRegexp = /^\[((?<min>[0-9]+):)?(?<sec>[0-9]+([\.:]([0-9]+))?)\]/;
-const metaTimeRegexp = /^\[((?<min>[0-9]+):)?(?<sec>[0-9]+([\.:]([0-9]+))?)\-(?<discriminator>[0-9]+)\]/; //[00:00.00-1] 作词 : xxx
-export function parsePureLyric(lyric: string): LyricPureLine[] {
-	const result: LyricPureLine[] = [];
-
-	for (const line of lyric.split("\n")) {
-		let lyric = line.trim();
-		const timestamps: number[] = [];
-		while (true) {
-			const matches = lyric.match(timeRegexp);
-			if (matches) {
-				const min = Number(matches.groups?.min || "0");
-				const sec = Number(matches.groups?.sec.replace(/:/, ".") || "0");
-				timestamps.push(Math.floor((min * 60 + sec) * 1000));
-				lyric =
-					lyric.slice(0, matches.index) +
-					lyric.slice((matches.index || 0) + matches[0].length);
-				lyric = lyric.trim();
-			} else {
-				break;
-			}
-		}
-		lyric = lyric.trim();
-		for (const time of timestamps) {
-			result.push({
-				time,
-				lyric,
-			});
+			const processedLine = processed[ptr]!;
+			processedLine.rawLyric = `${processedLine.rawLyric ? processedLine.rawLyric + ' ' : ''}${lyric}`;
 		}
 	}
 
-	if (result.length === 0 && lyric.trim().length > 0) {
-		return parseUnsyncedLyrics(lyric);
-	}
-
-	return result.sort((a, b) => a.time - b.time);;
-}
-
-export function parseUnsyncedLyrics(lyric: string): LyricPureLine[] {
-	const result: LyricPureLine[] = [];
-	for (const line of lyric.split("\n")) {
-		let lyric = line.trim();
-		if (!lyric.length) {
-			continue;
+	// 挂载精确对齐的逐字翻译/罗马音
+	const attachDynamicExtraLyric = (lyricStr: string, field: 'translatedLyric' | 'romanLyric') => {
+		if (isBlank(lyricStr)) return;
+		const extraLyrics = parsePureLyric(lyricStr);
+		let ptr = 0;
+		for (const { time, lyric } of extraLyrics) {
+			if (ptr >= processed.length) break;
+			while (
+				ptr + 1 < processed.length &&
+				Math.abs(processed[ptr + 1]!.time - time) <= Math.abs(processed[ptr]!.time - time)
+			) {
+				ptr++;
+			}
+			const processedLine = processed[ptr]!;
+			processedLine[field] = `${processedLine[field] ? processedLine[field] + ' ' : ''}${lyric}`;
 		}
-		if (lyric.match(metaTimeRegexp)) {
-			continue;
+	};
+
+	// 挂载模糊对齐的逐行翻译/罗马音（含相似度计算）
+	const attachLineExtraLyric = (lyricStr: string, field: 'translatedLyric' | 'romanLyric') => {
+		if (isBlank(lyricStr)) return;
+		const lyricParsed = parsePureLyric(lyricStr);
+		if (lyricParsed.length === 0) return;
+
+		const lyricTimeSet = new Set(lyricParsed.map(v => v.time));
+		const originalLyricTimeSet = new Set(originalLyrics.map(v => v.time));
+
+		let intersectCount = 0;
+		let attachMatchingMode = 'equal';
+		for (const t of lyricTimeSet) if (originalLyricTimeSet.has(t)) intersectCount++;
+		if (intersectCount / (lyricTimeSet.size || 1) < 0.1) attachMatchingMode = 'closest';
+
+		let lyricPtr = 0;
+		for (const { time: origTime, lyric: origLyric } of originalLyrics) {
+			if (lyricPtr >= lyricParsed.length) break;
+			while (
+				lyricPtr + 1 < lyricParsed.length &&
+				Math.abs(lyricParsed[lyricPtr + 1]!.time - origTime) <= Math.abs(lyricParsed[lyricPtr]!.time - origTime)
+			) {
+				lyricPtr++;
+			}
+			const target = lyricParsed[lyricPtr]!;
+			if (attachMatchingMode === 'equal' && Math.abs(target.time - origTime) >= 20) continue;
+			target.originalLyric = `${target.originalLyric ? target.originalLyric + ' ' : ''}${origLyric}`;
 		}
-		result.push({
-			time: 999999999,
-			lyric,
-			unsynced: true,
+
+		let ptr = 0;
+		for (const { time, lyric, originalLyric } of lyricParsed) {
+			if (ptr >= processed.length) break;
+			while (
+				ptr + 1 < processed.length &&
+				Math.abs(processed[ptr + 1]!.time - time) <= Math.abs(processed[ptr]!.time - time)
+			) {
+				ptr++;
+			}
+
+			let targetIndex = ptr;
+			let sequence = [targetIndex];
+			for (let offset = 1; offset <= 5; offset++) {
+				if (targetIndex - offset >= 0) sequence.push(targetIndex - offset);
+				if (targetIndex + offset < processed.length) sequence.push(targetIndex + offset);
+			}
+
+			let minWeight = Infinity;
+			for (const index of sequence) {
+				const v = processed[index]!;
+				const similarity = calcEditDistance(originalLyric, v.originalLyric);
+				const weight = similarity * 1000 + (v[field] ? 1 : 0);
+				if (weight >= minWeight) continue;
+				minWeight = weight;
+				targetIndex = index;
+			}
+
+			const processedLine = processed[targetIndex]!;
+			processedLine[field] = `${processedLine[field] ? processedLine[field] + ' ' : ''}${lyric}`;
+		}
+	};
+
+	// 数据源分发
+	if (dynamicTranslation) attachDynamicExtraLyric(dynamicTranslation, 'translatedLyric');
+	else attachLineExtraLyric(translation, 'translatedLyric');
+
+	if (dynamicRoman) attachDynamicExtraLyric(dynamicRoman, 'romanLyric');
+	else attachLineExtraLyric(roman, 'romanLyric');
+
+	// 插入空行
+	for (let i = processed.length - 2; i >= 0; i--) {
+		const thisLine = processed[i]!;
+		const nextLine = processed[i + 1]!;
+		if (isBlank(thisLine.originalLyric) || isBlank(nextLine.originalLyric) || thisLine.duration <= 0) continue;
+
+		const thisLineEndTime = (thisLine.dynamicLyricTime ?? thisLine.time) + thisLine.duration;
+		const nextLineStartTime = Math.min(nextLine.time, nextLine.dynamicLyricTime ?? Infinity);
+		if (nextLineStartTime - thisLineEndTime < 5000) continue;
+
+		processed.splice(i + 1, 0, {
+			time: thisLineEndTime,
+			originalLyric: '',
+			duration: nextLineStartTime - thisLineEndTime,
+			unsynced: false,
+			isInterlude: true,
 		});
 	}
-	//console.log(JSON.parse(JSON.stringify(result)));
-	// insert to the head
-	if (result.length) {
-		result.unshift({
+
+	for (const line of processed) {
+		const dynamic = line.dynamicLyric;
+		if (!dynamic?.length) continue;
+
+		// 正向遍历：同步原文空格到逐字
+		const raw = line.rawLyric ?? '';
+		const spaceRegex = /\s+/y;
+		let offset = 0;
+		for (const item of dynamic) {
+			const wordText = item.endsWithSpace ? item.word.slice(0, -1) : item.word;
+			if (!raw.startsWith(wordText, offset)) break;
+
+			offset += wordText.length;
+			spaceRegex.lastIndex = offset;
+			if (!spaceRegex.exec(raw)) continue;
+
+			offset = spaceRegex.lastIndex;
+
+			if (item.endsWithSpace) continue;
+			item.word += ' ';
+			item.endsWithSpace = true;
+		}
+
+		// 逆向遍历：标记尾部拖长音
+		let searchingForTarget = false;
+		for (let k = dynamic.length - 1; k >= 0; k--) {
+			const item = dynamic[k]!;
+			const word = item.word;
+
+			const hasBoundaryMarker = k === dynamic.length - 1 || item.endsWithSpace || hasTrailingPunctuation(word);
+			if (hasBoundaryMarker && !isLatinContraction(word)) searchingForTarget = true;
+			if (!searchingForTarget) continue;
+
+			if (isBlank(word) || hasPunctuation(word)) continue;
+
+			if (item.duration >= 1000) item.trailing = true;
+			searchingForTarget = false;
+		}
+	}
+
+	return processLyric(processed);
+}
+
+const yrcLineRegexp = /^\[(?<time>\d+),(?<duration>\d+)\](?<line>.*)/;
+const globalYrcWordTimeRegexp = /\((?<time>\d+),(?<duration>\d+),(?<flag>\d+)\)(?<word>[^(]*)/g;
+const metaTimeRegexp = /^\[(?:(?<min>\d+):)?(?<sec>\d+(?:[.:]\d+)?)-(?<discriminator>\d+)\]/;
+const globalTimeRegexp = /\[(?:(?<min>\d+):)?(?<sec>\d+(?:[.:]\d+)?)\]/g;
+
+const isMetaTimeLine = (str: string) => metaTimeRegexp.test(str);
+
+function parsePureLyric(lyric: string): LyricPureLine[] {
+	const trimmedLyric = lyric.trim();
+	if (!trimmedLyric) return [];
+
+	const result: LyricPureLine[] = [];
+	let needsSorting = false;
+	let lastTime = -1;
+
+	for (const line of trimmedLyric.split('\n')) {
+		const text = line.trimStart();
+		if (!text) continue;
+
+		const timestamps: number[] = [];
+		let expectedIndex = 0;
+
+		for (const match of text.matchAll(globalTimeRegexp)) {
+			if (match.index !== expectedIndex) break;
+			expectedIndex += match[0].length;
+			if (!match.groups) continue;
+
+			const min = +(match.groups["min"] ?? 0);
+			let secStr = match.groups["sec"] ?? '0';
+			if (secStr.includes(':')) secStr = secStr.replace(':', '.');
+			const sec = +secStr;
+
+			if (!Number.isNaN(min) && !Number.isNaN(sec)) timestamps.push(Math.floor((min * 60 + sec) * 1000));
+		}
+
+		if (timestamps.length === 0) continue;
+
+		const lyricText = text.slice(expectedIndex).trim();
+
+		for (const time of timestamps) {
+			if (time < lastTime) needsSorting = true;
+			lastTime = time;
+
+			result.push({ time, lyric: lyricText, unsynced: false });
+		}
+	}
+
+	return result.length === 0 ? parseUnsyncedLyrics(lyric) : needsSorting ? result.sort((a, b) => a.time - b.time) : result;
+}
+
+function parseUnsyncedLyrics(lyric: string): LyricPureLine[] {
+	const trimmedLyric = lyric.trim();
+	if (!trimmedLyric) return [];
+
+	const result: LyricPureLine[] = [
+		{
 			time: 0,
 			lyric: '歌词不支持滚动',
 			unsynced: true,
-		});
-	}
-	return result;
-}
+		},
+	];
 
-export function parsePureDynamicLyric(lyric: string): LyricLine[] {
-	const result: LyricLine[] = [];
-	// 解析逐词歌词
-	for (const line of lyric.trim().split("\n")) {
-		let tmp = line.trim();
-		const lineMatches = tmp.match(yrcLineRegexp);
-		if (lineMatches) {
-			const time = parseInt(lineMatches.groups?.time || "0");
-			const duration = parseInt(lineMatches.groups?.duration || "0");
-			tmp = lineMatches.groups?.line || "";
-			const words: DynamicLyricWord[] = [];
-			while (tmp.length > 0) {
-				const wordMatches = tmp.match(yrcWordTimeRegexp);
-				if (wordMatches) {
-					const wordTime = parseInt(wordMatches.groups?.time || "0");
-					const wordDuration = parseInt(wordMatches.groups?.duration || "0");
-					const flag = parseInt(wordMatches.groups?.flag || "0");
-					const word = wordMatches.groups?.word.trimStart();
-					const splitedWords = word
-						?.split(/\s+/)
-						.filter((v) => v.trim().length > 0); // 有些歌词一个单词还是一个句子的就离谱
-					if (splitedWords) {
-						const splitedDuration = wordDuration / splitedWords.length;
-						splitedWords.forEach((subWord, i) => {
-							if (i === splitedWords.length - 1) {
-								if (/\s/.test((word ?? '')[(word ?? '').length - 1])) {
-									words.push({
-										time: wordTime + i * splitedDuration,
-										duration: splitedDuration,
-										flag,
-										word: `${subWord.trimStart()} `,
-									});
-								} else {
-									words.push({
-										time: wordTime + i * splitedDuration,
-										duration: splitedDuration,
-										flag,
-										word: subWord.trimStart(),
-									});
-								}
-							} else if (i === 0) {
-								if (/\s/.test((word ?? '')[0])) {
-									words.push({
-										time: wordTime + i * splitedDuration,
-										duration: splitedDuration,
-										flag,
-										word: ` ${subWord.trimStart()}`,
-									});
-								} else {
-									words.push({
-										time: wordTime + i * splitedDuration,
-										duration: splitedDuration,
-										flag,
-										word: subWord.trimStart(),
-									});
-								}
-							} else {
-								words.push({
-									time: wordTime + i * splitedDuration,
-									duration: splitedDuration,
-									flag,
-									word: `${subWord.trimStart()} `,
-								});
-							}
-						});
-					}
-					tmp = tmp.slice(wordMatches.index || 0 + wordMatches[0].length);
-				} else {
-					break;
-				}
-			}
-			const line: LyricLine = {
-				time,
-				duration,
-				originalLyric: words.map((v) => v.word).join(""),
-				dynamicLyric: words,
-				dynamicLyricTime: time,
-			};
-			result.push(line);
-		}
-	}
-	return result.sort((a, b) => a.time - b.time);
-}
+	for (const line of trimmedLyric.split('\n')) {
+		const currentLyric = line.trim();
+		if (!currentLyric || isMetaTimeLine(currentLyric)) continue;
 
-// 处理歌词，去除一些太短的空格间曲段，并为前摇太长的歌曲加前导空格
-export function processLyric(lyric: LyricLine[]): LyricLine[] {
-	if (
-		lyric.length > 0 &&
-		lyric[lyric.length - 1].time === 5940000 &&
-		lyric[lyric.length - 1].duration === 0
-	) {
-		// 纯音乐，请欣赏
-		return PURE_MUSIC_LYRIC_LINE;
-	}
-
-	const result: LyricLine[] = [];
-
-	let isSpace = false;
-	lyric.forEach((thisLyric, i, lyric) => {
-		if (thisLyric.originalLyric.trim().length === 0) {
-			const nextLyric = lyric[i + 1];
-			if (nextLyric && nextLyric.time - thisLyric.time > 5000 && !isSpace) {
-				result.push(thisLyric);
-				isSpace = true;
-			}
-		} else {
-			isSpace = false;
-			result.push(thisLyric);
-		}
-	});
-
-	while (result[0]?.originalLyric.length === 0) {
-		result.shift();
-	}
-
-	if (result[0]?.time > 5000) {
-		result.unshift({
-			time: 500,
-			duration: result[0]?.time - 500,
-			originalLyric: "",
+		result.push({
+			time: 999999999,
+			lyric: currentLyric,
+			unsynced: true,
 		});
 	}
 
-	// 在英文句子中转化中文引号到英文分割号，中文标点到英文标点
-	for (let i = 0; i < result.length; i++) {
-		const thisLine = result[i];
-		if (!isEnglishSentense(thisLine?.originalLyric)) {
+	return result.length === 1 ? [] : result;
+}
+
+function parsePureDynamicLyric(lyric: string): LyricLine[] {
+	const result: LyricLine[] = [];
+
+	let needsSorting = false;
+	let lastLineTime = -1;
+
+	for (const line of lyric.trim().split('\n')) {
+		const trimmedLine = line.trim();
+		const lineMatches = trimmedLine.match(yrcLineRegexp);
+		if (!lineMatches?.groups) continue;
+
+		const time = +(lineMatches.groups["time"] ?? 0);
+		const duration = +(lineMatches.groups["duration"] ?? 0);
+		const lineText = lineMatches.groups["line"] ?? '';
+
+		if (time < lastLineTime) needsSorting = true;
+		lastLineTime = time;
+
+		const words: DynamicLyricWord[] = [];
+		let originalLyricStr = '';
+
+		for (const wordMatches of lineText.matchAll(globalYrcWordTimeRegexp)) {
+			if (!wordMatches.groups) continue;
+
+			const wordTime = +(wordMatches.groups["time"] ?? 0);
+			const wordDuration = +(wordMatches.groups["duration"] ?? 0);
+			const flag = +(wordMatches.groups["flag"] ?? 0);
+
+			const rawWord = wordMatches.groups["word"] ?? '';
+			if (!rawWord) continue;
+
+			const splitWords = rawWord.split(/\s+/).filter(s => s.length > 0);
+			const splitLen = splitWords.length;
+			if (splitLen === 0) continue;
+
+			const splitDuration = Math.round(wordDuration / splitLen);
+			const lastIdx = splitLen - 1;
+
+			if (startsWithSpace(rawWord)) splitWords[0] = ` ${splitWords[0]}`;
+			if (endsWithSpace(rawWord)) splitWords[lastIdx] = `${splitWords[lastIdx]} `;
+
+			splitWords.forEach((word, i) => {
+				const formattedWord = i !== lastIdx ? `${word} ` : word;
+
+				originalLyricStr += formattedWord;
+				words.push({
+					time: Math.round(wordTime + i * splitDuration),
+					duration: splitDuration,
+					flag,
+					word: formattedWord,
+					isCJK: hasCJK(formattedWord),
+					endsWithSpace: endsWithSpace(formattedWord),
+					trailing: false,
+				});
+			});
+		}
+
+		result.push({
+			time,
+			duration,
+			originalLyric: originalLyricStr,
+			dynamicLyric: words,
+			dynamicLyricTime: time,
+			unsynced: false,
+			isInterlude: false,
+		});
+	}
+
+	return needsSorting ? result.sort((a, b) => a.time - b.time) : result;
+}
+
+/**
+ * 此函数会更改传入的 lyric
+ */
+function processLyric(lyric: LyricLine[]): LyricLine[] {
+	const len = lyric.length;
+	if (len === 0) return [];
+
+	const lastLine = lyric[len - 1]!;
+	if (lastLine.time === 5940000 && lastLine.duration === 0) return PURE_MUSIC_LYRIC_LINE.map(v => ({ ...v }));
+
+	const result: LyricLine[] = [];
+	let lastPushedEmpty = false;
+	for (let i = 0; i < len; i++) {
+		const current = lyric[i]!;
+
+		if (isBlank(current.originalLyric)) {
+			const next = lyric[i + 1];
+			if (!next) break;
+
+			if (result.length === 0 || lastPushedEmpty || next.time - current.time <= 5000) continue;
+
+			current.isInterlude = true;
+			result.push(current);
+			lastPushedEmpty = true;
 			continue;
 		}
-		if (thisLine?.dynamicLyric) {
-			for (let j = 0; j < thisLine.dynamicLyric.length; j++) {
-				thisLine.dynamicLyric[j].word = replaceChineseSymbolsToEnglish(thisLine.dynamicLyric[j].word);
-			}
+
+		if (isLatinSentence(current.originalLyric)) {
+			current.originalLyric = normalizePunctuation(current.originalLyric);
+			if (current.dynamicLyric) for (const item of current.dynamicLyric) item.word = normalizePunctuation(item.word);
 		}
-		if (thisLine?.originalLyric) {
-			thisLine.originalLyric = replaceChineseSymbolsToEnglish(thisLine.originalLyric);
+
+		if (result.length === 0 && current.time > 5000) {
+			result.push({
+				time: 500,
+				duration: current.time - 500,
+				originalLyric: '',
+				unsynced: false,
+				isInterlude: true,
+			});
 		}
+
+		result.push(current);
+		lastPushedEmpty = false;
 	}
 
 	return result;
 }
-/*
-plugin.onLoad((injectPlugin) => {
-	const plugin = injectPlugin.mainPlugin;
-	plugin.parseLyric = parseLyric;
-	plugin.getLyricData = getLyricData;
-	plugin.parsePureLyric = parsePureLyric;
-	plugin.parsePureDynamicLyric = parsePureDynamicLyric;
-});
-*/

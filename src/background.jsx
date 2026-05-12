@@ -14,7 +14,6 @@ export function Background(props) {
 	const [staticFluid, setStaticFluid] = useState(true);
 	const image = props.image;
 
-	
 	if (!props.isFM) {
 		useEffect(() => {
 			const observer = new MutationObserver(() => {
@@ -31,7 +30,7 @@ export function Background(props) {
 			return () => {
 				observer.disconnect();
 				image.removeEventListener('load', onload);
-			}
+			};
 		}, [image]);
 	} else {
 		useEffect(() => {
@@ -49,36 +48,28 @@ export function Background(props) {
 			observer.observe(imageContainer, { childList: true, subtree: true });
 			return () => {
 				observer.disconnect();
-			}
+			};
 		}, [image]);
 	}
 
 	useEffect(() => {
-		document.addEventListener('rnp-background-type', (e) => {
+		document.addEventListener('rnp-background-type', e => {
 			setType(e.detail.type ?? 'blur');
 		});
-		document.addEventListener('rnp-static-fluid', (e) => {
+		document.addEventListener('rnp-static-fluid', e => {
 			setStaticFluid(e.detail ?? false);
 		});
 	}, []);
-	
+
 	return (
 		<>
-			{type === 'blur' && (
-				<BlurBackground url={url} />
-			)}
-			{type === 'gradient' && (
-				<GradientBackground url={url} />
-			)}
-			{type === 'fluid' && (
-				<FluidBackground url={url} static={staticFluid} isFM={props.isFM} />
-			)}
-			{type === 'solid' && (
-				<SolidBackground />
-			)}
+			{type === 'blur' && <BlurBackground url={url} />}
+			{type === 'gradient' && <GradientBackground url={url} />}
+			{type === 'fluid' && <FluidBackground url={url} static={staticFluid} isFM={props.isFM} />}
+			{type === 'solid' && <SolidBackground />}
 			{type === 'none' && (
 				<>
-					<div className="rnp-background-none"></div>
+					<div className='rnp-background-none'></div>
 					<style>
 						{`
 							body.mq-playing .g-single {
@@ -103,13 +94,11 @@ function BlurBackground(props) {
 		ref.current.style.transition = 'background-image 1.5s ease';
 	}, [props.url]);
 
-	return (
-		<div ref={ref} className="rnp-background-blur"/>
-	);
+	return <div ref={ref} className='rnp-background-blur' />;
 }
-
 function GradientBackground(props) {
-	const [gradient, setGradient] = useState('linear-gradient(-45deg, #666, #fff)');
+	const defaultGradient = 'linear-gradient(-45deg, #666, #fff)';
+	const [gradient, setGradient] = useState(defaultGradient);
 	useEffect(() => {
 		const image = new Image();
 		image.crossOrigin = 'Anonymous';
@@ -117,14 +106,12 @@ function GradientBackground(props) {
 		image.onload = () => {
 			console.log('image loaded');
 			const palette = colorThief.getPalette(image);
-			setGradient(getGradientFromPalette(palette));
+			setGradient(getGradientFromPalette(palette) ?? defaultGradient);
 		};
 		image.src = props.url;
 	}, [props.url]);
 
-	return (
-		<div className="rnp-background-gradient" style={{ backgroundImage: gradient }} />
-	);
+	return <div className='rnp-background-gradient' style={{ backgroundImage: gradient }} />;
 }
 
 function FluidBackground(props) {
@@ -132,39 +119,31 @@ function FluidBackground(props) {
 	const [feTurbulence, feDisplacementMap] = [useRef(), useRef()];
 	const fluidContainer = useRef();
 	const staticFluidStyleRef = useRef();
-	const [songId, setSongId] = useState("0");
+	const [songId, setSongId] = useState('0');
 
-	const playState = useRef(document.querySelector("#main-player .btnp").classList.contains("btnp-pause"));
+	const playState = useRef(document.querySelector('#main-player .btnp').classList.contains('btnp-pause'));
 
 	const onPlayStateChange = (id, state) => {
 		//playState.current = (state.split('|')[1] == 'resume');
 		if (!props.isFM) {
-			playState.current = document.querySelector("#main-player .btnp").classList.contains("btnp-pause");
+			playState.current = document.querySelector('#main-player .btnp').classList.contains('btnp-pause');
 		} else {
-			playState.current = document.querySelector(".m-player-fm .btnp").classList.contains("btnp-pause");
+			playState.current = document.querySelector('.m-player-fm .btnp').classList.contains('btnp-pause');
 		}
 		setSongId(id);
-		fluidContainer.current.classList.toggle("paused", !playState.current);
+		fluidContainer.current.classList.toggle('paused', !playState.current);
 		//console.log(id, playState.current, state.split('|')[1], document.querySelector("#main-player .btnp").classList.contains("btnp-pause"));
 	};
 
 	useEffect(() => {
-		fluidContainer.current.classList.toggle("paused", !playState.current);
+		fluidContainer.current.classList.toggle('paused', !playState.current);
 	}, [songId]);
 
 	useEffect(() => {
-		legacyNativeCmder.appendRegisterCall(
-			"PlayState",
-			"audioplayer",
-			onPlayStateChange
-		);
+		legacyNativeCmder.appendRegisterCall('PlayState', 'audioplayer', onPlayStateChange);
 		return () => {
-			legacyNativeCmder.removeRegisterCall(	
-				"PlayState",
-				"audioplayer",
-				onPlayStateChange
-			);
-		}
+			legacyNativeCmder.removeRegisterCall('PlayState', 'audioplayer', onPlayStateChange);
+		};
 	}, []);
 
 	useEffect(() => {
@@ -209,22 +188,23 @@ function FluidBackground(props) {
 				const canvas = canvasList[y * 2 + x];
 				canvas.current.style.width = `${canvasSize}px`;
 				canvas.current.style.height = `${canvasSize}px`;
-				const signX = x === 0 ? -1 : 1, signY = y === 0 ? -1 : 1;
-				canvas.current.style.left = `${(width / 2 + signX * canvasSize * 0.35) - canvasSize / 2}px`;
-				canvas.current.style.top = `${(height / 2 + signY * canvasSize * 0.35) - canvasSize / 2}px`;
+				const signX = x === 0 ? -1 : 1,
+					signY = y === 0 ? -1 : 1;
+				canvas.current.style.left = `${width / 2 + signX * canvasSize * 0.35 - canvasSize / 2}px`;
+				canvas.current.style.top = `${height / 2 + signY * canvasSize * 0.35 - canvasSize / 2}px`;
 			}
 		}
-	}
+	};
 
 	useEffect(() => {
 		window.addEventListener('resize', onResize);
 		onResize();
 		return () => {
 			window.removeEventListener('resize', onResize);
-		}
+		};
 	}, []);
 
-	const setDisplacementScale = React.useCallback((value) => {
+	const setDisplacementScale = React.useCallback(value => {
 		if (!feDisplacementMap.current) return;
 		feDisplacementMap.current.setAttribute('scale', value);
 	}, []);
@@ -267,15 +247,12 @@ function FluidBackground(props) {
 			}
 		}, []);*/
 
-		
 		const processor = useRef({});
 		useEffect(() => {
 			//processor.current.bufferLength = loadedPlugins.LibFrontendPlay.currentAudioAnalyser.frequencyBinCount;
 			processor.current.bufferLength = 1024;
 			processor.current.dataArray = new Float32Array(processor.current.bufferLength);
-		}, []); 
-
-
+		}, []);
 
 		const request = useRef(0);
 		useEffect(() => {
@@ -294,15 +271,18 @@ function FluidBackground(props) {
 			request.current = requestAnimationFrame(animate);
 			return () => {
 				cancelAnimationFrame(request.current);
-			}
+			};
 		}, []);
 	}
 	// Audio-responsive background (For LibVolumeLevelProvider)
-	else if (typeof(registerAudioLevelCallback) == "function") {
-		let audioLevels = {}, audioLevelSum = 0, now = 0;
-		let maxq = [], minq = [];
+	else if (typeof registerAudioLevelCallback == 'function') {
+		let audioLevels = {},
+			audioLevelSum = 0,
+			now = 0;
+		let maxq = [],
+			minq = [];
 		let percentage;
-		const onAudioLevelChange = (value) => {
+		const onAudioLevelChange = value => {
 			if (!playState.current) return;
 			now += 1;
 			if (now <= 100) {
@@ -334,18 +314,18 @@ function FluidBackground(props) {
 			}
 			//console.log('percentage', percentage, easeInOutQuint(percentage));
 			percentage = easeInOutQuint(percentage);
-			const scale = 500 - (percentage) * 300;
+			const scale = 500 - percentage * 300;
 			//feDisplacementMap.current.setAttribute('scale', scale);
 			if (!feDisplacementMap.current) return;
 			const oldScale = parseFloat(feDisplacementMap.current.getAttribute('scale'));
 			setDisplacementScale(oldScale + (scale - oldScale) * 0.1);
-		}
+		};
 		useEffect(() => {
 			registerAudioLevelCallback(onAudioLevelChange);
 			return () => {
 				unregisterAudioLevelCallback(onAudioLevelChange);
 				setDisplacementScale(400);
-			}
+			};
 		}, []);
 		useEffect(() => {
 			audioLevels = [];
@@ -355,7 +335,7 @@ function FluidBackground(props) {
 
 	return (
 		<>
-			<style ref={staticFluidStyleRef} type="text/css">
+			<style ref={staticFluidStyleRef} type='text/css'>
 				{`
 					body.static-fluid .rnp-background-fluid-rect {
 						animation-play-state: paused !important;
@@ -366,25 +346,39 @@ function FluidBackground(props) {
 						animation-delay: 0s !important;
 					}
 				`}
-
 			</style>
-			<svg width="0" height="0" style={{ position: 'absolute' }}>
-				<filter id="fluid-filter" x="-20%" y="-20%" width="140%" height="140%" filterUnits="objectBoundingBox" primitiveUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-					<feTurbulence ref={feTurbulence} type="fractalNoise" baseFrequency="0.005" numOctaves="1" seed="0"></feTurbulence> 
-					{
-						props.static ?
-						<feDisplacementMap key={1} in="SourceGraphic" scale="400"></feDisplacementMap> :
-						<feDisplacementMap key={2} ref={feDisplacementMap} in="SourceGraphic" scale="400"></feDisplacementMap>
-					}
+			<svg width='0' height='0' style={{ position: 'absolute' }}>
+				<filter
+					id='fluid-filter'
+					x='-20%'
+					y='-20%'
+					width='140%'
+					height='140%'
+					filterUnits='objectBoundingBox'
+					primitiveUnits='userSpaceOnUse'
+					color-interpolation-filters='sRGB'
+				>
+					<feTurbulence
+						ref={feTurbulence}
+						type='fractalNoise'
+						baseFrequency='0.005'
+						numOctaves='1'
+						seed='0'
+					></feTurbulence>
+					{props.static ? (
+						<feDisplacementMap key={1} in='SourceGraphic' scale='400'></feDisplacementMap>
+					) : (
+						<feDisplacementMap key={2} ref={feDisplacementMap} in='SourceGraphic' scale='400'></feDisplacementMap>
+					)}
 					{/*<feGaussianBlur stdDeviation="80 60" x="0%" y="0%" width="100%" height="100%" in="" edgeMode="duplicate" result="blur"></feGaussianBlur>*/}
 				</filter>
 			</svg>
-			<div className="rnp-background-fluid" style={{ backgroundImage: `url(${props.url})` }}>
-				<div className="rnp-background-fluid-rect" ref={fluidContainer} >
-					<canvas ref={canvas1} className="rnp-background-fluid-canvas" canvasID="1" width="100" height="100"/>
-					<canvas ref={canvas2} className="rnp-background-fluid-canvas" canvasID="2" width="100" height="100"/>
-					<canvas ref={canvas3} className="rnp-background-fluid-canvas" canvasID="3" width="100" height="100"/>
-					<canvas ref={canvas4} className="rnp-background-fluid-canvas" canvasID="4" width="100" height="100"/>
+			<div className='rnp-background-fluid' style={{ backgroundImage: `url(${props.url})` }}>
+				<div className='rnp-background-fluid-rect' ref={fluidContainer}>
+					<canvas ref={canvas1} className='rnp-background-fluid-canvas' canvasID='1' width='100' height='100' />
+					<canvas ref={canvas2} className='rnp-background-fluid-canvas' canvasID='2' width='100' height='100' />
+					<canvas ref={canvas3} className='rnp-background-fluid-canvas' canvasID='3' width='100' height='100' />
+					<canvas ref={canvas4} className='rnp-background-fluid-canvas' canvasID='4' width='100' height='100' />
 				</div>
 			</div>
 		</>
@@ -392,7 +386,5 @@ function FluidBackground(props) {
 }
 
 function SolidBackground() {
-	return (
-		<div className="rnp-background-solid"></div>
-	);
+	return <div className='rnp-background-solid'></div>;
 }

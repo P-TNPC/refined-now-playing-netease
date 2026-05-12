@@ -4,9 +4,9 @@ import './FM.scss'
 import './experimental.scss';
 import settingsMenuHTML from './settings-menu.html';
 import './settings-menu.scss';
-import { argb2Rgb, rgb2Argb } from './color-utils.jsx';
-import { waitForElement, waitForElementAsync, getSetting, setSetting, chunk, copyTextToClipboard } from './utils.jsx';
-import './refined-control-bar.jsx';
+import { argb2Rgb, rgb2Argb } from './color-utils.js';
+import { waitForElement, waitForElementAsync, getSetting, setSetting, getARGBPixels, copyTextToClipboard } from './utils.js';
+import './refined-control-bar.js';
 import { Background } from './background.jsx';
 import { CoverShadow } from './cover-shadow.jsx';
 import { Lyrics } from './lyrics.jsx';
@@ -18,7 +18,7 @@ import { MiniSongInfo } from './mini-song-info.jsx';
 import { ProgressbarPreview } from './progressbar-preview.jsx';
 import { FontSettings } from './font-settings.jsx';
 import './material-you-compatibility.scss';
-import { createRoot } from 'react-dom/client';
+import { render } from 'react-dom';
 
 const updateAccentColor = (name, argb, isFM = false) => {
 	const [r, g, b] = [...argb2Rgb(argb)];
@@ -56,9 +56,7 @@ const calcAccentColor = (dom, isFM = false) => {
 	canvas.height = 50;
 	const ctx = canvas.getContext('2d');
 	ctx.drawImage(dom, 0, 0, dom.naturalWidth, dom.naturalHeight, 0, 0, 50, 50);
-	const pixels = chunk(ctx.getImageData(0, 0, 50, 50).data, 4).map((pixel) => {
-		return ((pixel[3] << 24 >>> 0) | (pixel[0] << 16 >>> 0) | (pixel[1] << 8 >>> 0) | pixel[2]) >>> 0;
-	});
+	const pixels = getARGBPixels(ctx.getImageData(0, 0, 50, 50).data);
 	const quantizedColors = QuantizerCelebi.quantize(pixels, 128);
 	const sortedQuantizedColors = Array.from(quantizedColors).sort((a, b) => b[1] - a[1]);
 
@@ -561,7 +559,7 @@ const addSettingsMenu = async (isFM = false) => {
 			else lyricOffsetReset.classList.add('active');
 			shouldSettingMenuReload[isFM ? 1 : 0] = true;
 			setSetting('lyric-offset', ms);
-		}, parseInt(getSetting('lyric-offset', 0)), 'change');
+		}, getSetting('lyric-offset', 0), 'change');
 
 		const setLyricOffsetValue = (ms) => {
 			lyricOffsetSlider.value = ms;
@@ -569,10 +567,10 @@ const addSettingsMenu = async (isFM = false) => {
 			lyricOffsetSlider.dispatchEvent(new Event('change'));
 		};
 		lyricOffsetAdd.addEventListener('click', () => {
-			setLyricOffsetValue(parseInt(getSetting('lyric-offset', 0)) + 100);
+			setLyricOffsetValue(getSetting('lyric-offset', 0) + 100);
 		});
 		lyricOffsetSub.addEventListener('click', () => {
-			setLyricOffsetValue(parseInt(getSetting('lyric-offset', 0)) - 100);
+			setLyricOffsetValue(getSetting('lyric-offset', 0) - 100);
 		});
 		lyricOffsetReset.addEventListener('click', () => {
 			setLyricOffsetValue(0);
@@ -582,8 +580,7 @@ const addSettingsMenu = async (isFM = false) => {
 		const customFont = getOptionDom('#custom-font');
 		bindCheckboxToClass(customFont, 'rnp-custom-font', false);
 		const customFontSectionContainer = getOptionDom('#rnp-custom-font-section');
-		const containerRoot = createRoot(customFontSectionContainer);
-		containerRoot.render(<FontSettings />);
+		render(<FontSettings />, customFontSectionContainer);
 
 		// 实验性选项
 		const fluidMaxFramerate = getOptionDom('#fluid-max-framerate');
@@ -861,7 +858,7 @@ plugin.onLoad(async (p) => {
 
 			const coverShadowController = document.createElement('div');
 			coverShadowController.classList.add('rnp-cover-shadow-controller');
-			ReactDOM.render(<CoverShadow image={ await waitForElementAsync('.n-single .cdimg img') }/>, coverShadowController);
+			ReactDOM.render(<CoverShadow/>, coverShadowController);
 			document.body.appendChild(coverShadowController);
 
 
@@ -879,10 +876,7 @@ plugin.onLoad(async (p) => {
 			miniSongInfo.classList.add('rnp-mini-song-info');
 			setTimeout(async () => {
 				ReactDOM.render(
-					<MiniSongInfo
-						image={ await waitForElementAsync('.n-single .cdimg img') }
-						infContainer={ await waitForElementAsync('.g-single .g-singlec-ct .n-single .mn .head .inf') }
-					/>
+					<MiniSongInfo/>
 				, miniSongInfo);
 				document.querySelector('.g-single').appendChild(miniSongInfo);
 			}, 0);

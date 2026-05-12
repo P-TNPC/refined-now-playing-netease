@@ -1,20 +1,8 @@
-import './lyric-provider.jsx';
-import { getSetting, setSetting, copyTextToClipboard } from './utils.jsx';
-import { showContextMenu } from './context-menu';
+import './lyric-provider.js';
 import './lyrics.scss';
-
-import _isEqual from 'lodash/isEqual';
-
-const useState = React.useState;
-const useEffect = React.useEffect;
-const useLayoutEffect = React.useLayoutEffect;
-const useMemo = React.useMemo;
-const useCallback = React.useCallback;
-const useRef = React.useRef;
-
-const isFMSession = () => {
-	return !document.querySelector(".m-player-fm").classList.contains("f-dn");
-}
+import { getSetting, setSetting, copyTextToClipboard,isFMSession } from './utils.js';
+import { showContextMenu } from './context-menu';
+import { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
 
 const customOpacityFunc = localStorage.getItem('rnp-custom-opacity-func', null) ? new Function('offset', localStorage.getItem('rnp-custom-opacity-func')) : null;
 const customBlurFunc = localStorage.getItem('rnp-custom-blur-func', null) ? new Function('offset', localStorage.getItem('rnp-custom-blur-func')) : null;
@@ -72,7 +60,7 @@ export function Lyrics(props) {
 	}
 	const [currentLineForScrolling, setCurrentLineForScrolling] = useState(0);	// 为提前 0.2s 滚动，使滚动 delay 与逐词歌词对应 而设置的 提前的，仅用于滚动的 currentLine
 
-	const [globalOffset, setGlobalOffset, _globalOffset] = useRefState(parseInt(getSetting('lyric-offset', 0)));
+	const [globalOffset, setGlobalOffset, _globalOffset] = useRefState(getSetting('lyric-offset', 0));
 
 	const heightOfItems = useRef([]);
 
@@ -89,7 +77,7 @@ export function Lyrics(props) {
 	const [showRomaji, setShowRomaji] = useState(getSetting('show-romaji', true));
 	const [useKaraokeLyrics, setUseKaraokeLyrics] = useState(getSetting('use-karaoke-lyrics', true));
 	const [karaokeAnimation, setKaraokeAnimation] = useState(getSetting('karaoke-animation', 'float'));
-	const [currentLyricAlignmentPercentage, setCurrentLyricAlignmentPercentage] = useState(parseInt(getSetting('current-lyric-alignment-percentage', 50)));
+	const [currentLyricAlignmentPercentage, setCurrentLyricAlignmentPercentage] = useState(getSetting('current-lyric-alignment-percentage', 50));
 	const [lyricStagger, setLyricStagger] = useState(getSetting('lyric-stagger', true));
 	const [lyricGlow, setLyricGlow] = useState(getSetting('lyric-glow', true));
 
@@ -417,7 +405,7 @@ export function Lyrics(props) {
 	]);
 
 
-	const onPlayStateChange = (id, state) => {
+	const onPlayStateChange = (id) => {
 		if (!isCurrentModeSession()) {
 			return;
 		}
@@ -1327,7 +1315,7 @@ function Scrollbar(props) {
 			//console.log(props.nonInterludeToAll[cloest]);
 			props.scrollingFocusOnLine(props.nonInterludeToAll[cloest]);
 		}
-		const onMouseUp = (e) => {
+		const onMouseUp = () => {
 			dragging = false;
 			thumb.classList.remove('dragging');
 			thumb.style.transitionDuration = '';
@@ -1383,11 +1371,11 @@ function LyricOverview(props) {
 			document.addEventListener('mousemove', onMouseMove);
 			document.addEventListener('mouseup', onMouseUp);
 		};
-		const onMouseMove = (e) => {
+		const onMouseMove = () => {
 			if (!selecting) return;
 			props.setOverviewModeScrolling(true);
 		};
-		const onMouseUp = (e) => {
+		const onMouseUp = () => {
 			if (!selecting) return;
 			selecting = false;
 			props.setOverviewModeScrolling(true);
