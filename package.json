@@ -20,12 +20,14 @@
 		"typescript": "^6.0.3"
 	},
 	"dependencies": {
-		"@mui/material": "^9.0.1",
-		"@emotion/react": "^11.14.0",
-		"@emotion/styled": "^11.14.1",
 		"@importantimport/material-color-utilities": "^0.2.1",
 		"colorthief": "^3.3.1",
 		"compare-versions": "^6.1.1",
-		"path-browserify": "^1.0.1"
+		"path-browserify": "^1.0.1",
+		"react-select": "^5.10.2"
+	},
+	"overrides": {
+		"react": "^16.14.0",
+		"react-dom": "^16.14.0"
 	}
 }

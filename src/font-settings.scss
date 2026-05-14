@@ -2,15 +2,15 @@
 	svg {
 		pointer-events: all;
 	}
-	.MuiAutocomplete-root {
+	.rnp-select-container {
 		margin-bottom: 20px;
 	}
-	.Mui-focused .MuiOutlinedInput-notchedOutline {
-		border-color: var(--rnp-accent-color) !important;
+	.rnp-select-container *,
+	.rnp-select__menu * {
+		font-family: inherit !important;
+		box-sizing: border-box !important;
 	}
-	label.MuiFormLabel-root.Mui-focused {
-		color: var(--rnp-accent-color) !important;
-	}
+
 	.rnp-checkbox-note {
 		padding-left: 0;
 	}
@@ -19,7 +19,7 @@
 		margin-top: 10px;
 		display: flex;
 		align-items: center;
-		
+
 		.rnp-font-preset-button {
 			color: #fff;
 			background: #ffffff44;
@@ -30,7 +30,7 @@
 			font-size: 90%;
 		}
 		.rnp-font-preset-label {
-			opacity: .6;
+			opacity: 0.6;
 		}
 		.rnp-download-font-button {
 			color: #fff;
@@ -47,7 +47,4 @@
 			}
 		}
 	}
-}
-.MuiAutocomplete-root * , .MuiAutocomplete-popper *{
-    font-family: inherit !important;
 }

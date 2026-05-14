@@ -1,13 +1,140 @@
 import './font-settings.scss';
-import { TextField, Autocomplete, ThemeProvider, createTheme } from '@mui/material';
+import type { StylesConfig, MultiValue } from 'react-select';
+import CreatableSelect from 'react-select/creatable';
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { getSetting, setSetting } from './utils.js';
 
-const darkTheme = createTheme({
-	palette: {
-		mode: 'dark',
-	},
-});
+interface FontOption {
+	label: string;
+	value: string;
+}
+const customDarkStyles: StylesConfig<FontOption, true> = {
+	control: (base, state) => ({
+		...base,
+		minHeight: '56px',
+		fontSize: '16px',
+		borderRadius: '6px',
+		backgroundColor: 'transparent',
+		boxShadow: state.isFocused ? '0 0 0 1px var(--rnp-accent-color)' : 'none',
+		borderColor: state.isFocused ? 'var(--rnp-accent-color)' : 'rgba(255, 255, 255, 0.23)',
+		'&:hover': {
+			borderColor: state.isFocused ? 'var(--rnp-accent-color)' : 'rgba(255, 255, 255, 0.87)',
+		},
+		cursor: 'text',
+		transition: 'border-color .2s, box-shadow .2s',
+	}),
+
+	valueContainer: base => ({
+		...base,
+		padding: '4px 9px',
+	}),
+
+	input: base => ({
+		...base,
+		color: '#fff',
+		margin: '0 2px',
+		padding: 0,
+	}),
+
+	placeholder: base => ({
+		...base,
+		color: 'rgba(255, 255, 255, 0.5)',
+		fontSize: '16px',
+	}),
+
+	multiValue: base => ({
+		...base,
+		backgroundColor: 'rgba(255, 255, 255, 0.08)',
+		borderRadius: '16px',
+		margin: '2px 4px 2px 0',
+		height: '32px',
+		alignItems: 'center',
+	}),
+	multiValueLabel: base => ({
+		...base,
+		color: '#e0e0e0',
+		fontSize: '13px',
+		paddingLeft: '12px',
+		paddingRight: '8px',
+	}),
+
+	multiValueRemove: base => ({
+		...base,
+		color: 'rgba(255, 255, 255, 0.26)',
+		marginRight: '4px',
+		borderRadius: '50%',
+		height: '22px',
+		width: '22px',
+		display: 'flex',
+		alignItems: 'center',
+		justifyContent: 'center',
+		cursor: 'pointer',
+		'& > svg': {
+			width: '14px',
+			height: '14px',
+		},
+		':hover': {
+			backgroundColor: 'rgba(255, 255, 255, .12)',
+			color: '#fff',
+		},
+	}),
+
+	menu: base => ({
+		...base,
+		backgroundColor: '#1e1e1e88',
+		borderRadius: '6px',
+		marginTop: '4px',
+		boxShadow: '0px 5px 5px -3px rgba(0,0,0,.2), 0px 8px 10px 1px rgba(0,0,0,.14), 0px 3px 14px 2px rgba(0,0,0,.12)',
+		zIndex: 9999,
+	}),
+	menuList: base => ({
+		...base,
+		padding: '8px 0',
+	}),
+
+	option: (base, state) => ({
+		...base,
+		minHeight: '48px',
+		display: 'flex',
+		alignItems: 'center',
+		padding: '6px 16px',
+		fontSize: '16px',
+		backgroundColor: state.isFocused ? 'rgba(255, 255, 255, .08)' : 'transparent',
+		color: '#fff',
+		cursor: 'pointer',
+		transition: 'background-color 150ms cubic-bezier(.4, 0, .2, 1) 0ms',
+		'&:active': {
+			backgroundColor: 'rgba(255, 255, 255, .12)',
+		},
+	}),
+
+	clearIndicator: base => ({
+		...base,
+		color: 'rgba(255, 255, 255, .54)',
+		cursor: 'pointer',
+		padding: '8px',
+		'& > svg': {
+			width: '20px',
+			height: '20px',
+		},
+		'&:hover': { color: 'rgba(255, 255, 255, .87)' },
+	}),
+	dropdownIndicator: base => ({
+		...base,
+		color: 'rgba(255, 255, 255, .54)',
+		cursor: 'pointer',
+		padding: '8px',
+		'& > svg': {
+			width: '24px',
+			height: '24px',
+		},
+		'&:hover': { color: 'rgba(255, 255, 255, .87)' },
+	}),
+
+	indicatorSeparator: () => ({
+		display: 'none',
+	}),
+};
 
 const FONT_PRESETS = [
 	{
@@ -68,21 +195,33 @@ export function FontSettings() {
 		setSetting('font-family', newFonts);
 	}, []);
 
+	const handleSelectChange = useCallback(
+		(newValue: MultiValue<FontOption>) => {
+			const fontStrings = newValue.map(item => item.value);
+			handleFontChange(fontStrings);
+		},
+		[handleFontChange],
+	);
+
+	const options: FontOption[] = useMemo(() => fontList.map(font => ({ label: font, value: font })), [fontList]);
+	const selectValue: FontOption[] = useMemo(() => fontFamily.map(font => ({ label: font, value: font })), [fontFamily]);
+
 	return (
 		<>
-			<ThemeProvider theme={darkTheme}>
-				<Autocomplete
-					multiple
-					value={fontFamily}
-					onChange={(_, newValue) => handleFontChange(newValue)}
-					options={fontList}
-					getOptionLabel={option => option}
-					fullWidth
-					freeSolo
-					forcePopupIcon={false}
-					renderInput={params => <TextField {...params} variant='outlined' label='选择字体' placeholder='' />}
+			<div style={{ marginBottom: '16px' }}>
+				<CreatableSelect
+					isMulti
+					options={options}
+					value={selectValue}
+					onChange={handleSelectChange}
+					styles={customDarkStyles}
+					className='rnp-select-container'
+					classNamePrefix='rnp-select'
+					placeholder='选择或输入字体...'
+					formatCreateLabel={inputValue => `添加手动输入的字体 "${inputValue}"`}
+					noOptionsMessage={() => '未找到字体'}
 				/>
-			</ThemeProvider>
+			</div>
 
 			<span className='rnp-checkbox-note'>某些字体可能不在列表中，需要手动输入</span>
 			<span className='rnp-checkbox-note'>如果顺序在前的字体缺少某些字符，则会使用顺序在后的字体，依次顺延</span>
