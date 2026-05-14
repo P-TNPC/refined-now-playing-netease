@@ -137,16 +137,17 @@ export function parseLyric(
 		const result: LyricLine[] = [];
 
 		const timeIndexMap = new Map<number, LyricLine>();
-		for (const v of originalLyrics) {
+		for (const { time, lyric, unsynced } of originalLyrics) {
 			const line: LyricLine = {
-				time: v.time,
-				originalLyric: v.lyric,
+				time,
+				originalLyric: lyric,
 				duration: 0,
-				unsynced: v.unsynced,
+				unsynced,
 				isInterlude: false,
 			};
 			result.push(line);
-			if (!timeIndexMap.has(v.time)) timeIndexMap.set(v.time, line);
+			// if (!timeIndexMap.has(time)) timeIndexMap.set(time, line);
+			timeIndexMap.set(time, line); // 有人会用好几个 [00:00.00] 标元数据，所以用后的覆盖前的
 		}
 
 		// 挂载翻译
@@ -360,8 +361,8 @@ function parsePureLyric(lyric: string): LyricPureLine[] {
 			expectedIndex += match[0].length;
 			if (!match.groups) continue;
 
-			const min = +(match.groups["min"] ?? 0);
-			let secStr = match.groups["sec"] ?? '0';
+			const min = +(match.groups['min'] ?? 0);
+			let secStr = match.groups['sec'] ?? '0';
 			if (secStr.includes(':')) secStr = secStr.replace(':', '.');
 			const sec = +secStr;
 
@@ -420,9 +421,9 @@ function parsePureDynamicLyric(lyric: string): LyricLine[] {
 		const lineMatches = trimmedLine.match(yrcLineRegexp);
 		if (!lineMatches?.groups) continue;
 
-		const time = +(lineMatches.groups["time"] ?? 0);
-		const duration = +(lineMatches.groups["duration"] ?? 0);
-		const lineText = lineMatches.groups["line"] ?? '';
+		const time = +(lineMatches.groups['time'] ?? 0);
+		const duration = +(lineMatches.groups['duration'] ?? 0);
+		const lineText = lineMatches.groups['line'] ?? '';
 
 		if (time < lastLineTime) needsSorting = true;
 		lastLineTime = time;
@@ -433,11 +434,11 @@ function parsePureDynamicLyric(lyric: string): LyricLine[] {
 		for (const wordMatches of lineText.matchAll(globalYrcWordTimeRegexp)) {
 			if (!wordMatches.groups) continue;
 
-			const wordTime = +(wordMatches.groups["time"] ?? 0);
-			const wordDuration = +(wordMatches.groups["duration"] ?? 0);
-			const flag = +(wordMatches.groups["flag"] ?? 0);
+			const wordTime = +(wordMatches.groups['time'] ?? 0);
+			const wordDuration = +(wordMatches.groups['duration'] ?? 0);
+			const flag = +(wordMatches.groups['flag'] ?? 0);
 
-			const rawWord = wordMatches.groups["word"] ?? '';
+			const rawWord = wordMatches.groups['word'] ?? '';
 			if (!rawWord) continue;
 
 			const splitWords = rawWord.split(/\s+/).filter(s => s.length > 0);

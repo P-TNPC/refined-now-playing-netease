@@ -1,3 +1,6 @@
+import type { LyricLine } from './liblyric';
+
+// 设置
 export interface SettingsMap {
 	'cover-blurry-shadow': boolean;
 	'enable-progressbar-preview': boolean;
@@ -10,6 +13,7 @@ export interface SettingsMap {
 	'rectangle-cover': boolean;
 	'show-romaji': boolean;
 	'show-translation': boolean;
+	'static-fluid': boolean;
 	'use-karaoke-lyrics': boolean;
 	'current-lyric-alignment-percentage': number;
 	'fluid-max-framerate': number;
@@ -22,7 +26,6 @@ export interface SettingsMap {
 	'font-family': string[];
 }
 export type SettingOption = keyof SettingsMap;
-
 const SETTING_PREFIX = 'refined-now-playing-';
 const formatOption = (option: SettingOption) => option.replace(/-fm$/, '') as SettingOption; // 历史遗留问题
 export const getSetting = <K extends SettingOption>(option: K, defaultValue: SettingsMap[K]): SettingsMap[K] => {
@@ -57,8 +60,8 @@ export const setSetting = <K extends SettingOption>(option: K, value: SettingsMa
 	);
 };
 
+// 其他
 export const waitForElementAsync = (selector: string): Promise<Element | null> => betterncm.utils.waitForElement(selector);
-
 export const waitForElement = async (selectors: string, callback: (el: Element) => void): Promise<void> => {
 	const selectorList = selectors.split(',');
 	const elements = await Promise.all(selectorList.map(s => waitForElementAsync(s)));
@@ -98,6 +101,13 @@ export const copyTextToClipboard = async (text: string): Promise<void> => {
 };
 
 export const isFMSession = (): boolean => !!betterncm.ncm.getPlayingSong()?.from.fm;
+export const isPureMusicLyrics = (lyrics: LyricLine[]): boolean => {
+	return (
+		lyrics[0]?.unsynced ||
+		lyrics.length === 1 ||
+		(lyrics.length <= 10 && lyrics.some(x => x.originalLyric.includes('纯音乐')))
+	);
+};
 
 // 看不懂喵
 export const cyrb53 = (str: string, seed = 0): number => {

@@ -258,7 +258,7 @@ declare module 'betterncm-api/ncm' {
 			data: {
 				id: number;
 				name: string;
-				duration: number;
+				duration: number; // 单位毫秒
 				artists: Artist[];
 				album: AlbumInfo;
 				[key: string]: any; // 发明 any 的真是个天才
@@ -267,6 +267,7 @@ declare module 'betterncm-api/ncm' {
 				fm?: boolean;
 				[key: string]: any;
 			};
+			state: 1 | 2; // 1: 暂停，2: 播放
 			[key: string]: any; // 兜底
 		}
 		/**
@@ -455,15 +456,39 @@ declare module '*.scss' {
 	const classes: { readonly [key: string]: string };
 	export default classes;
 }
+declare module '*.html' {
+	const html: string;
+	export default html;
+}
 
-declare const loadedPlugins: { [k: string]: import('plugin').NCMInjectPlugin };
-declare const pluginPath: string;
-declare const plugin: import('plugin').NCMInjectPlugin;
+declare namespace betterncm_native {
+	export namespace fs {
+		export function watchDirectory(watchDirPath: string, callback: (dirPath: string, filename: string) => void): void;
+		export function readFileText(filePath: string): string;
+		export function readDir(filePath: string): string[];
+		export function exists(filePath: string): boolean;
+	}
+
+	export namespace app {
+		export function version(): string;
+		export function reloadIgnoreCache(): void;
+		export function restart(): void;
+	}
+}
+
+type NCMInjectPlugin = import('plugin').NCMInjectPlugin;
+interface LibFrontendPlay extends NCMInjectPlugin {
+	currentAudioAnalyser?: AnalyserNode;
+}
+declare const loadedPlugins: {
+	LibFrontendPlay?: LibFrontendPlay;
+	[k: string]: NCMInjectPlugin;
+};
 declare const betterncm: typeof import('betterncm-api/index').default;
 declare const ReactDOM: typeof import('react-dom');
-declare const DEBUG: boolean;
-declare const betterncm_native: any;
+declare const BETTERNCM_API_PATH: string;
 declare const BETTERNCM_FILES_PATH: string;
+declare const channel: { call: (action: string, callback: Function, args?: any[]) => void };
 
 // 网易云原生底层播放器事件信息
 declare interface AudioPlayerLoadInfo {
@@ -508,7 +533,7 @@ declare const legacyNativeCmder: {
 	/**
 	 * 查询系统字体
 	 */
-	call(command: 'os.querySystemFonts'): Promise<[number, string[]]>;
+	call(command: 'os.querySystemFonts'): Promise<[string, string[]]>;
 	/**
 	 * 异步调用原生底层方法
 	 */

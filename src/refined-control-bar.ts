@@ -9,7 +9,7 @@ const secondsToTime = (seconds: number): string => {
 	return `${m}:${String(s).padStart(2, '0')}`;
 };
 
-const timeToSeconds = (time: string): number => time.split(':').reduce((acc, curr) => acc * 60 + parseInt(curr, 10), 0);
+const timeToSeconds = (time: string): number => time.split(':').reduce((acc, curr) => acc * 60 + Number.parseInt(curr, 10), 0);
 
 let currentIndicatorMode = getSetting('time-indicator', 'remain');
 
@@ -55,7 +55,7 @@ const updateTimeIndicatorPosition = (containerEl: HTMLDivElement): void => {
 
 	if (!leftestButton) return;
 
-	const right = parseInt(window.getComputedStyle(leftestButton).right, 10) + leftestButton.clientWidth + 15;
+	const right = Number.parseInt(window.getComputedStyle(leftestButton).right, 10) + leftestButton.clientWidth + 15;
 	containerEl.style.right = `${right}px`;
 };
 

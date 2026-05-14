@@ -34,7 +34,7 @@ function ContextMenu({ items, x, y, onClose }: ContextMenuProps) {
 		const menu = menuRef.current;
 		if (!menu) return;
 
-		const { width, height } = menu.getBoundingClientRect();
+		const { offsetWidth: width, offsetHeight: height } = menu;
 		const { innerWidth, innerHeight } = window;
 
 		menu.style.left = '';
@@ -66,8 +66,8 @@ function ContextMenu({ items, x, y, onClose }: ContextMenuProps) {
 		menu.style.transformOrigin = anchor;
 		menu.animate(
 			[
-				{ width: '0px', height: '0px', opacity: 0.3 },
-				{ width: `${width}px`, height: `${height}px`, opacity: 1 },
+				{ transform: 'scale(0)', opacity: 0.3 },
+				{ transform: 'scale(1)', opacity: 1 },
 			],
 			{
 				duration: 150,
@@ -86,7 +86,6 @@ function ContextMenu({ items, x, y, onClose }: ContextMenuProps) {
 			easing: 'ease-out',
 			fill: 'forwards',
 		});
-
 		anim.onfinish = () => onClose();
 	}, [onClose]);
 
@@ -130,6 +129,5 @@ export function showContextMenu(x: number, y: number, items: ContextMenuItem[]):
 		unmountComponentAtNode(container);
 		container.remove();
 	};
-
 	render(<ContextMenu items={items} x={x} y={y} onClose={handleDispose} />, container);
 }

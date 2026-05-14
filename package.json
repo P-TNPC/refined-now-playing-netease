@@ -11,24 +11,21 @@
 		"serve": "rsbuild dev"
 	},
 	"devDependencies": {
-		"@rsbuild/core": "^2.0.5",
+		"@rsbuild/core": "^2.0.6",
 		"@rsbuild/plugin-react": "^2.0.0",
 		"@rsbuild/plugin-sass": "^1.5.2",
 		"@types/node": "^25.7.0",
 		"@types/react": "16.14.69",
 		"@types/react-dom": "16.9.25",
-		"prettier": "^3.8.3",
-		"sass": "^1.99.0",
 		"typescript": "^6.0.3"
 	},
 	"dependencies": {
+		"@mui/material": "^9.0.1",
 		"@emotion/react": "^11.14.0",
 		"@emotion/styled": "^11.14.1",
 		"@importantimport/material-color-utilities": "^0.2.1",
-		"@mui/material": "^5.18.0",
-		"colorthief": "^2.7.0",
+		"colorthief": "^3.3.1",
 		"compare-versions": "^6.1.1",
-		"fast-average-color": "^9.5.2",
 		"path-browserify": "^1.0.1"
 	}
 }

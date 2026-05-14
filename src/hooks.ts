@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { getSetting, type SettingChangedDetail, type SettingOption, type SettingsMap } from './utils.js';
+import type { ProcessedLyricsData } from './lyric-provider.js';
 
 export interface NativeAudioEventMap {
 	Load: [trackHash: string, info: AudioPlayerLoadInfo];
@@ -40,4 +41,18 @@ export function useSetting<K extends SettingOption>(key: K, defaultValue: Settin
 	}, [key]);
 
 	return value;
+}
+
+export function useLyrics(): ProcessedLyricsData | null {
+	const [lyricsData, setLyricsData] = useState<ProcessedLyricsData | null>(() => window.currentLyrics ?? null);
+
+	useEffect(() => {
+		const handleLyricsUpdate = (e: CustomEvent<ProcessedLyricsData>) => setLyricsData(e.detail);
+
+		document.addEventListener('lyrics-updated', handleLyricsUpdate);
+		if (window.currentLyrics) setLyricsData(window.currentLyrics);
+		return () => document.removeEventListener('lyrics-updated', handleLyricsUpdate);
+	}, []);
+
+	return lyricsData;
 }

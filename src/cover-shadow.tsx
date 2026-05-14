@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNativeAudioEvent, useSetting } from './hooks.js';
 
-const buildShadowCacheUrl = (url: string) => {
+const buildCacheUrl = (url: string) => {
 	return url ? `orpheus://cache/?${url}?imageView&enlarge=1&thumbnail=200y200&type=webp` : '';
 };
 
@@ -15,7 +15,7 @@ export function CoverShadow() {
 	const fetchCover = useCallback(() => {
 		const rawUrl = betterncm.ncm.getPlayingSong()?.data.album.picUrl ?? '';
 		setFallbackUrl(rawUrl);
-		setCoverUrl(buildShadowCacheUrl(rawUrl));
+		setCoverUrl(buildCacheUrl(rawUrl));
 	}, []);
 
 	useEffect(() => fetchCover(), [fetchCover]);

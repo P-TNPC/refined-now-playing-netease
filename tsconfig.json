@@ -9,8 +9,8 @@
 		"jsx": "react-jsx",
 		"moduleDetection": "force",
 		"resolveJsonModule": true,
-		"allowJs": true, // 过渡期
-		"checkJs": true,
+		// "allowJs": true,
+		// "checkJs": true,
 		"noEmit": true,
 		"strict": true,
 		"skipLibCheck": true,
