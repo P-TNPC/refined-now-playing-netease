@@ -1,11 +1,7 @@
 import { parseLyric, type LyricLine } from './liblyric/index.js';
 import { cyrb53 } from './utils.js';
 
-export interface LyricUser {
-	nickname: string;
-	userid: number;
-}
-
+/** artistId 可能为0 */
 export interface ArtistMeta {
 	artistName: string;
 	artistId: number;
@@ -16,7 +12,11 @@ export interface LyricRole {
 	artistMetaList: ArtistMeta[];
 }
 
-export interface RawLyricData {
+interface RawLyricUser {
+	nickname: string;
+	userid: number;
+}
+interface RawLyricData {
 	data?: number;
 	lrc?: { lyric: string };
 	ytlrc?: { lyric: string };
@@ -25,19 +25,24 @@ export interface RawLyricData {
 	yromalrc?: { lyric: string };
 	romalrc?: { lyric: string };
 	yrc?: { lyric: string };
-	lyricUser?: LyricUser;
-	transUser?: LyricUser;
+	lyricUser?: RawLyricUser;
+	transUser?: RawLyricUser;
 	roles?: LyricRole[];
 	source?: { name: string };
+}
+
+export interface LyricContributor {
+	name: string;
+	userid?: number;
 }
 
 export interface ProcessedLyricsData {
 	lyrics: LyricLine[];
 	contributors: {
-		original?: { name: string; userid: number };
-		translation?: { name: string; userid: number };
-		roles?: LyricRole[];
-		lyricSource?: { name: string };
+		roles: LyricRole[];
+		original?: LyricContributor & { userid: number };
+		translation?: LyricContributor & { userid: number };
+		lyricSource?: LyricContributor & { userid?: never };
 	};
 	unsynced: boolean;
 	hash: string;

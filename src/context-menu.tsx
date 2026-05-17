@@ -3,11 +3,11 @@ import { useRef, useLayoutEffect, useCallback, useEffect } from 'react';
 import { render, unmountComponentAtNode } from 'react-dom';
 
 interface BaseMenuItem {
-	label: string; // 分割线可能不需要 label
 	html?: string;
 }
 
 interface NormalMenuItem extends BaseMenuItem {
+	label: string;
 	divider?: false;
 	callback?: () => void;
 }

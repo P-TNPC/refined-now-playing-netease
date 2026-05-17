@@ -478,6 +478,8 @@ declare namespace betterncm_native {
 
 type NCMInjectPlugin = import('plugin').NCMInjectPlugin;
 interface LibFrontendPlay extends NCMInjectPlugin {
+	enabled: boolean;
+	currentAudioPlayer: HTMLAudioElement;
 	currentAudioAnalyser?: AnalyserNode;
 }
 declare const loadedPlugins: {
@@ -485,7 +487,7 @@ declare const loadedPlugins: {
 	[k: string]: NCMInjectPlugin;
 };
 declare const betterncm: typeof import('betterncm-api/index').default;
-declare const ReactDOM: typeof import('react-dom');
+// declare const ReactDOM: typeof import('react-dom');
 declare const BETTERNCM_API_PATH: string;
 declare const BETTERNCM_FILES_PATH: string;
 declare const channel: { call: (action: string, callback: Function, args?: any[]) => void };

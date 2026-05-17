@@ -1,8 +1,106 @@
 import './lyric-provider.js';
 import './lyrics.scss';
-import { getSetting, setSetting, copyTextToClipboard, isFMSession } from './utils.js';
-import { showContextMenu } from './context-menu';
-import { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
+import { getSetting, setSetting, copyTextToClipboard, isFMSession, type SettingsMap } from './utils.js';
+import { showContextMenu, type ContextMenuItem } from './context-menu.jsx';
+import {
+	useState,
+	useEffect,
+	useRef,
+	useLayoutEffect,
+	useCallback,
+	Fragment,
+	type CSSProperties,
+	type RefObject,
+	type MouseEvent as ReactMouseEvent,
+} from 'react';
+import type { LyricContributor, LyricRole, ProcessedLyricsData } from './lyric-provider.js';
+import type { DynamicLyricWord, LyricLine } from './liblyric/index.js';
+
+interface TransformState {
+	top: number;
+	scale: number;
+	delay: number;
+	blur?: number;
+	left?: number;
+	extraTop?: number;
+	rotate?: number;
+	opacity?: number;
+	outOfRangeHidden?: boolean;
+	duration?: number;
+}
+
+interface ArtistProps {
+	role: LyricRole;
+}
+interface ContributorProps {
+	text: string;
+	user: LyricContributor | undefined;
+}
+interface ContributorsProps {
+	contributors: ProcessedLyricsData['contributors'] | null;
+	transforms: TransformState;
+}
+
+interface LyricOverviewProps {
+	lyrics: LyricLine[];
+	currentLine: number;
+	showRomaji: boolean;
+	showTranslation: boolean;
+	isUnsynced: boolean;
+	overviewContainerRef: RefObject<HTMLDivElement>;
+	jumpToTime: (time: number) => void;
+	setOverviewModeScrolling: (val: boolean) => void;
+	exitOverviewModeScrollingSoon: (timeout?: number) => void;
+}
+
+interface ScrollbarProps {
+	nonInterludeToAll: number[];
+	allToNonInterlude: number[];
+	currentLine: number;
+	containerHeight: number;
+	overviewMode: boolean;
+	scrollingMode: boolean;
+	scrollingFocusLine: number;
+	scrollingFocusOnLine: (line: number) => void;
+	exitScrollingModeSoon: () => void;
+}
+
+interface BaseLineProps {
+	id: number;
+	line: LyricLine;
+	currentLine: number;
+	currentTime: number;
+	seekCounter: number;
+	playState: boolean;
+}
+interface InterludeProps extends BaseLineProps {}
+interface LineProps extends BaseLineProps {
+	showTranslation: boolean;
+	showRomaji: boolean;
+	useKaraokeLyrics: boolean;
+	jumpToTime: (time: number) => void;
+	transforms: TransformState;
+	karaokeAnimation: SettingsMap['karaoke-animation'];
+	outOfRangeScrolling: boolean;
+	outOfRangeKaraoke: boolean;
+	lyricGlow: boolean;
+}
+
+interface GlowAnimationData {
+	animation: Animation;
+	timing: {
+		duration: number;
+		wordTime: number;
+	};
+}
+
+function useLatest<T>(value: T) {
+	const ref = useRef(value);
+	useLayoutEffect(() => {
+		ref.current = value;
+	});
+	return ref;
+}
 
 const useRefState = initialValue => {
 	const [value, setValue] = useState(initialValue);
@@ -907,586 +1005,544 @@ export function Lyrics(props) {
 	);
 }
 
-function Line(props) {
-	if (props.outOfRangeScrolling) {
-		return (
-			<div
-				className={`rnp-lyrics-line ${props.line.isInterlude ? 'rnp-interlude' : ''}`}
-				offset={offset}
-				style={{ display: 'none' }}
-			/>
-		);
-	}
-	if (props.line.originalLyric == '') {
-		props.line.isInterlude = true;
-	}
-	const offset = props.id - props.currentLine;
-	const karaokeAnimationFloat = word => {
-		if (props.currentLine != props.id) {
-			return {
-				transitionDuration: `200ms`,
-				transitionDelay: `0ms`,
-			};
-		}
-		if (props.playState == false && word.time + word.duration - props.currentTime > 0) {
-			return {
-				transitionDuration: `0s`,
-				transitionDelay: `0ms`,
-				opacity: Math.max(0.4 + (0.6 * (props.currentTime - word.time)) / word.duration, 0.4),
-				transform: `translateY(-${Math.max(((props.currentTime - word.time) / word.duration) * 2, 0)}px)`,
-			};
-		}
-		return {
-			transitionDuration: `${word.duration}ms, ${word.duration + 150}ms`,
-			transitionDelay: `${word.time - props.currentTime}ms`,
-		};
-	};
-	const karaokeAnimationSlide = word => {
-		if (props.currentLine != props.id) {
-			return {
-				transitionDuration: `0ms, 0ms, 0.5s`,
-				transitionDelay: `0ms`,
-			};
-		}
-		if (props.playState == false && word.time + word.duration - props.currentTime > 0) {
-			return {
-				transitionDuration: `0s, 0s, 0.5s`,
-				transitionDelay: `0ms`,
-				transform: `translateY(-${Math.max(((props.currentTime - word.time) / word.duration) * 1, 0)}px)`,
-				WebkitMaskPositionX: `${100 - Math.max(((props.currentTime - word.time) / word.duration) * 100, 0)}%`,
-			};
-		}
-		return {
-			transitionDuration: `${word.duration}ms, ${word.duration * 0.8}ms, 0.5s`,
-			transitionDelay: `${word.time - props.currentTime}ms, ${word.time - props.currentTime + word.duration * 0.5}ms, 0ms`,
-		};
-	};
-	const getKaraokeAnimation = word => {
-		if (props.karaokeAnimation == 'float') {
-			return karaokeAnimationFloat(word);
-		} else if (props.karaokeAnimation == 'slide') {
-			return karaokeAnimationSlide(word);
-		}
-	};
-
-	const karaokeLineRef = useRef(null);
-	useEffect(() => {
-		if (props.currentLine != props.id) return;
-		if (!karaokeLineRef.current) return;
-		karaokeLineRef.current.classList.add('force-refresh');
-		setTimeout(() => {
-			if (!karaokeLineRef.current) return;
-			karaokeLineRef.current.classList.remove('force-refresh');
-		}, 6);
-	}, [props.useKaraokeLyrics, props.seekCounter, props.karaokeAnimation]);
-
-	const glowAnimationsRef = useRef([]);
-	useEffect(() => {
-		if (!props.lyricGlow) return;
-
-		if (!props.line?.dynamicLyric) return;
-
-		const trailingIndexes = [];
-		for (let i = 0; i < props.line.dynamicLyric.length; i++) {
-			if (props.line.dynamicLyric[i]?.trailing) {
-				trailingIndexes.push(i);
-			}
-		}
-		if (trailingIndexes.length == 0) return;
-
-		const glowAnimation = index => {
-			if (!karaokeLineRef.current?.children[index]) return null;
-			const fadeIn = props.line.dynamicLyric[index].duration * 0.6;
-			const keep = props.line.dynamicLyric[index].duration * 0.4;
-			const fadeAway = 500;
-			const duration = fadeIn + keep + fadeAway;
-			const glowAnimationTiming = {
-				fadeIn: fadeIn,
-				keep: keep,
-				fadeAway: fadeAway,
-				duration: duration,
-				wordTime: props.line.dynamicLyric[index].time,
-				wordDuration: props.line.dynamicLyric[index].duration,
-			};
-
-			const glowTarget = karaokeLineRef.current?.children[index];
-			const glowAnimation = glowTarget.animate(
-				[
-					{
-						filter: 'drop-shadow(0 0 0px rgba(var(--rnp-accent-color-shade-2-rgb), 0)) drop-shadow(0 0 0px rgba(var(--rnp-accent-color-shade-2-rgb), 0))',
-					},
-					{
-						filter: 'drop-shadow(0 0 15px rgba(var(--rnp-accent-color-shade-2-rgb), 1)) drop-shadow(0 0 10px rgba(var(--rnp-accent-color-shade-2-rgb), 0.5))',
-						offset: fadeIn / duration,
-					},
-					{
-						filter: 'drop-shadow(0 0 15px rgba(var(--rnp-accent-color-shade-2-rgb), 1)) drop-shadow(0 0 10px rgba(var(--rnp-accent-color-shade-2-rgb), 0.5))',
-						offset: (fadeIn + keep) / duration,
-					},
-					{
-						filter: 'drop-shadow(0 0 0px rgba(var(--rnp-accent-color-shade-2-rgb), 0)) drop-shadow(0 0 0px rgba(var(--rnp-accent-color-shade-2-rgb), 0))',
-						offset: 1,
-					},
-				],
-				{
-					duration: duration,
-					fill: 'forwards',
-					delay: 0,
-				},
-			);
-			glowAnimation.pause();
-			glowAnimation.currentTime = 0;
-			return {
-				animation: glowAnimation,
-				timing: glowAnimationTiming,
-			};
-		};
-
-		glowAnimationsRef.current = [];
-		for (let i = 0; i < trailingIndexes.length; i++) {
-			const tmp = glowAnimation(trailingIndexes[i]);
-			if (tmp) glowAnimationsRef.current.push(tmp);
-		}
-
-		return () => {
-			for (let i = 0; i < glowAnimationsRef.current.length; i++) {
-				glowAnimationsRef.current[i].animation.cancel();
-			}
-			glowAnimationsRef.current = [];
-		};
-	}, [props.line, props.useKaraokeLyrics, props.outOfRangeKaraoke, props.karaokeAnimation, props.lyricGlow]);
-
-	// update glow animation
-	useEffect(() => {
-		for (let glowAnimation of glowAnimationsRef.current) {
-			//console.log(glowAnimation, glowAnimationsRef.current);
-			const animation = glowAnimation.animation;
-			const timing = glowAnimation.timing;
-
-			if (props.currentLine != props.id) {
-				if (props.currentLine > props.id) {
-					if (animation.playState == 'running') {
-						continue;
-					}
-					animation.currentTime = timing.duration;
-				} else {
-					animation.currentTime = 0;
-					animation.pause();
-				}
-				continue;
-			}
-			if (props.playState == false) {
-				animation.pause();
-				//console.log(animation.currentTime);
-				animation.currentTime = props.currentTime - timing.wordTime;
-				//console.log(props.currentTime, timing.wordTime, props.currentTime - timing.wordTime);
-				continue;
-			}
-			animation.play();
-			animation.currentTime = props.currentTime - timing.wordTime;
-			//console.log(props.currentTime, timing.wordTime, props.currentTime - timing.wordTime);
-		}
-	}, [
-		props.currentLine,
-		props.useKaraokeLyrics,
-		props.seekCounter,
-		props.karaokeAnimation,
-		props.playState,
-		props.lyricGlow,
-	]);
-
+function Artist({ role }: ArtistProps) {
+	if (role.artistMetaList.length === 0) return null;
 	return (
-		<div
-			className={`rnp-lyrics-line ${offset < 0 ? 'passed' : ''} ${props.line.isInterlude ? 'rnp-interlude' : ''}`}
-			offset={offset}
-			onClick={() => props.jumpToTime(props.line.time + 50)}
-			onContextMenu={e => {
-				e.preventDefault();
-				if (props.line.isInterlude || !props.line.originalLyric) return;
-				let all = props.line.originalLyric;
-				if (props.showRomaji && props.line.romanLyric) all += '\n' + props.line.romanLyric;
-				if (props.showTranslation && props.line.translatedLyric) all += '\n' + props.line.translatedLyric;
-				const items = [
-					{
-						label: '复制该句歌词',
-						callback: () => {
-							copyTextToClipboard(all);
-						},
-					},
-				];
-				if (props.line.romanLyric || props.line.translatedLyric) {
-					items.push({
-						divider: true,
-					});
-					items.push({
-						label: '复制原文',
-						callback: () => {
-							copyTextToClipboard(props.line.originalLyric);
-						},
-					});
-					if (props.line.romanLyric) {
-						items.push({
-							label: '复制罗马音',
-							callback: () => {
-								copyTextToClipboard(props.line.romanLyric);
-							},
-						});
-					}
-					if (props.line.translatedLyric) {
-						items.push({
-							label: '复制翻译',
-							callback: () => {
-								copyTextToClipboard(props.line.translatedLyric);
-							},
-						});
-					}
-				}
-				showContextMenu(e.clientX, e.clientY, items);
-			}}
-			style={{
-				display: props.outOfRangeScrolling ? 'none' : 'block',
-				transform: `
-					${props.transforms.left ? `translateX(${props.transforms.left}px)` : ''}
-					translateY(${props.transforms.top + (props.transforms?.extraTop ?? 0)}px)
-					scale(${props.transforms.scale})
-					${props.transforms.rotate ? `rotate(${props.transforms.rotate}deg)` : ''}
-				`,
-				transitionDelay: `${props.transforms.delay}ms`,
-				transitionDuration: `${props.transforms?.duration ?? 500}ms`,
-				filter: props.transforms?.blur ? `blur(${props.transforms?.blur}px)` : 'none',
-				opacity: props.transforms?.opacity ?? 1,
-				...(props.transforms?.outOfRangeHidden && { visibility: 'hidden' }),
-			}}
-		>
-			{props.line.dynamicLyric && props.useKaraokeLyrics && !props.outOfRangeKaraoke && (
-				<div className='rnp-lyrics-line-karaoke' ref={karaokeLineRef}>
-					{props.line.dynamicLyric.map((word, index) => {
-						return (
-							<div
-								key={`${props.karaokeAnimation} ${index}`}
-								ref={karaokeLineRef.current?.children[index]}
-								className={`rnp-karaoke-word ${word?.isCJK ? 'is-cjk' : ''} ${word?.endsWithSpace ? 'end-with-space' : ''}`}
-								style={getKaraokeAnimation(word)}
-							>
-								<span>{word.word}</span>
-								{props.karaokeAnimation == 'slide' && (
-									<span className='rnp-karaoke-word-filler' style={getKaraokeAnimation(word)}>
-										{word.word}
-									</span>
-								)}
-							</div>
-						);
-					})}
-				</div>
-			)}
-			{!(props.line.dynamicLyric && props.useKaraokeLyrics && !props.outOfRangeKaraoke) && props.line.originalLyric && (
-				<div className='rnp-lyrics-line-original'>{props.line.originalLyric}</div>
-			)}
-			{props.line.romanLyric && props.showRomaji && <div className='rnp-lyrics-line-romaji'>{props.line.romanLyric}</div>}
-			{props.line.translatedLyric && props.showTranslation && (
-				<div className='rnp-lyrics-line-translated'>{props.line.translatedLyric}</div>
-			)}
-			{props.line.isInterlude && (
-				<Interlude
-					id={props.id}
-					line={props.line}
-					currentLine={props.currentLine}
-					currentTime={props.currentTime}
-					seekCounter={props.seekCounter}
-					playState={props.playState}
-				/>
+		<div className='rnp-contributor rnp-contributor-artist'>
+			<span>{role.roleName}: </span>
+			{role.artistMetaList.map(({ artistId, artistName }, index) => (
+				<Fragment key={`${artistId}-${index}`}>
+					{artistId ? (
+						<a className='rnp-contributor-artist' href={`#/m/artist/?id=${artistId}`}>
+							{artistName}
+						</a>
+					) : (
+						<span className='rnp-contributor-artist'>{artistName}</span>
+					)}
+					{index < role.artistMetaList.length - 1 && <span>, </span>}
+				</Fragment>
+			))}
+		</div>
+	);
+}
+function Contributor({ text, user }: ContributorProps) {
+	if (!user) return null;
+	return (
+		<div className='rnp-contributor rnp-contributor-lyrics'>
+			<span>{text}: </span>
+			{user.userid ? (
+				<a className='rnp-contributor-user' href={`#/m/personal/?uid=${user.userid}`}>
+					{user.name}
+				</a>
+			) : (
+				<span className='rnp-contributor-user'>{user.name}</span>
 			)}
 		</div>
 	);
 }
+function Contributors({ contributors, transforms }: ContributorsProps) {
+	if (!contributors) return null;
+	const { left, top, extraTop, scale, rotate, delay, duration, blur, opacity, outOfRangeHidden } = transforms;
+	const { roles, original, translation, lyricSource } = contributors;
 
-function Interlude(props) {
-	const dotContainerRef = useRef(null);
-
-	const dotCount = 3;
-	const perDotTime = parseInt(props.line.duration / dotCount);
-	const dots = [];
-	for (let i = 0; i < dotCount; i++) {
-		dots.push({
-			time: props.line.time + perDotTime * i,
-			duration: perDotTime,
-		});
-	}
-	const dotAnimation = dot => {
-		if (dotContainerRef.current) dotContainerRef.current.classList.add('pause-breath');
-		if (props.currentLine != props.id) {
-			return {
-				transitionDuration: `200ms`,
-				transitionDelay: `0ms`,
-			};
-		}
-		if (props.playState == false && dot.time + dot.duration - props.currentTime > 0) {
-			return {
-				transitionDuration: `0s`,
-				transitionDelay: `0ms`,
-				opacity: Math.max(0.2 + (0.7 * (props.currentTime - dot.time)) / dot.duration, 0.2),
-				transform: `scale(${Math.max(0.9 + ((0.1 * (props.currentTime - dot.time)) / dot.duration) * 2, 0.8)}px)`,
-			};
-		}
-		if (dotContainerRef.current) dotContainerRef.current.classList.remove('pause-breath');
-		return {
-			transitionDuration: `${dot.duration}ms, ${dot.duration + 150}ms`,
-			transitionDelay: `${dot.time - props.currentTime}ms`,
-		};
+	const containerStyle: CSSProperties = {
+		transform: `
+			${left ? `translateX(${left}px)` : ''}
+			translateY(${top + (extraTop ?? 0)}px)
+			scale(${scale})
+			${rotate ? `rotate(${rotate}deg)` : ''}
+		`,
+		transitionDelay: `${delay}ms`,
+		transitionDuration: `${duration ?? 500}ms`,
+		filter: blur ? `blur(${blur}px)` : 'none',
+		opacity: opacity ?? 1,
+		visibility: outOfRangeHidden ? 'hidden' : 'visible',
 	};
-
-	useEffect(() => {
-		if (props.currentLine != props.id) return;
-		if (!dotContainerRef.current) return;
-		dotContainerRef.current.classList.add('force-refresh');
-		setTimeout(() => {
-			dotContainerRef.current?.classList?.remove('force-refresh');
-		}, 6);
-	}, [props.seekCounter]);
-
 	return (
-		<div className='rnp-interlude-inner' ref={dotContainerRef}>
-			{dots.map((dot, index) => {
-				return <div key={index} className='rnp-interlude-dot' style={dotAnimation(dot)} />;
-			})}
-		</div>
-	);
-}
-
-function Contributors(props) {
-	const contributors = props.contributors;
-	return (
-		<div
-			className='rnp-contributors'
-			style={{
-				transform: `
-					${props.transforms.left ? `translateX(${props.transforms.left}px)` : ''}
-					translateY(${props.transforms.top + (props.transforms?.extraTop ?? 0)}px)
-					scale(${props.transforms.scale})
-					${props.transforms.rotate ? `rotate(${props.transforms.rotate}deg)` : ''}
-				`,
-				transitionDelay: `${props.transforms.delay}ms, ${props.transforms.delay}ms`,
-				transitionDuration: `${props.transforms?.duration ?? 500}ms`,
-				filter: props.transforms?.blur ? `blur(${props.transforms?.blur}px)` : 'none',
-				opacity: props.transforms?.opacity ?? 1,
-				...(props.transforms?.outOfRangeHidden && { visibility: 'hidden' }),
-			}}
-		>
+		<div className='rnp-contributors' style={containerStyle}>
 			<div className='rnp-contributors-inner'>
-				{(contributors?.roles ?? []).map((role, index) => {
-					return <Artist key={index} role={role} />;
-				})}
-				<Contributor text='歌词贡献者' user={contributors?.original} />
-				<Contributor text='翻译贡献者' user={contributors?.translation} />
-				<Contributor text='歌词来源' user={contributors?.lyricSource} />
+				{roles.map((role, index) => (
+					<Artist key={`role-${index}`} role={role} />
+				))}
+				<Contributor text='歌词贡献者' user={original} />
+				<Contributor text='翻译贡献者' user={translation} />
+				<Contributor text='歌词来源' user={lyricSource} />
 			</div>
 		</div>
 	);
 }
 
-function Artist(props) {
-	if (!props.role) {
-		return null;
-	}
-	return (
-		<div className='rnp-contributor rnp-contributor-artist'>
-			<span>{props.role.roleName}: </span>
-			{props.role.artistMetaList.map((artist, index) => {
-				return (
-					<>
-						{artist.artistId ? (
-							<a className='rnp-contributor-artist' href={`#/m/artist/?id=${artist.artistId}`}>
-								{artist.artistName}
-							</a>
-						) : (
-							<span className='rnp-contributor-artist'>{artist.artistName}</span>
-						)}
-						{index < props.role.artistMetaList.length - 1 && <span>, </span>}
-					</>
-				);
-			})}
-		</div>
-	);
-}
-function Contributor(props) {
-	if (!props.user) {
-		return null;
-	}
-	return (
-		<div className='rnp-contributor rnp-contributor-lyrics'>
-			<span>{props.text}: </span>
-			{props?.user?.userid ? (
-				<a className='rnp-contributor-user' href={`#/m/personal/?uid=${props.user.userid}`}>
-					{props.user.name}
-				</a>
-			) : (
-				<span className='rnp-contributor-user'>{props.user.name}</span>
-			)}
-		</div>
-	);
-}
-function Scrollbar(props) {
-	const scrollbarRef = useRef(null);
-	const thumbRef = useRef(null);
+function LyricOverview({
+	lyrics,
+	currentLine,
+	showRomaji,
+	showTranslation,
+	isUnsynced,
+	overviewContainerRef,
+	jumpToTime,
+	setOverviewModeScrolling,
+	exitOverviewModeScrollingSoon,
+}: LyricOverviewProps) {
+	const selectingRef = useRef(false);
+	useEffect(() => {
+		const onMouseMove = () => {
+			if (selectingRef.current) setOverviewModeScrolling(true);
+		};
 
-	const currentLine = props.scrollingMode ? props.scrollingFocusLine : props.currentLine;
-	const totalSteps = props.nonInterludeToAll.length;
-	const thumbHeight = Math.max(props.containerHeight / totalSteps, 30);
-	const heightOfTrack = props.containerHeight - thumbHeight;
-	const perStep = totalSteps > 1 ? heightOfTrack / (totalSteps - 1) : 0;
-	const current = props.allToNonInterlude[currentLine];
+		const onMouseUp = () => {
+			if (!selectingRef.current) return;
+			selectingRef.current = false;
+			setOverviewModeScrolling(true);
+			exitOverviewModeScrollingSoon();
+			document.removeEventListener('mousemove', onMouseMove);
+			document.removeEventListener('mouseup', onMouseUp);
+		};
+
+		// 暴露给容器的 Mousedown 处理器
+		const handleContainerMouseDown = (e: MouseEvent) => {
+			if (e.button !== 0 || !(e.target as HTMLElement).closest('.rnp-lyrics-overview-line')) return;
+			selectingRef.current = true;
+			setOverviewModeScrolling(true);
+			document.addEventListener('mousemove', onMouseMove);
+			document.addEventListener('mouseup', onMouseUp);
+		};
+
+		const container = overviewContainerRef.current;
+		if (!container) return () => {};
+
+		container.addEventListener('mousedown', handleContainerMouseDown);
+		return () => {
+			container.removeEventListener('mousedown', handleContainerMouseDown);
+			document.removeEventListener('mousemove', onMouseMove);
+			document.removeEventListener('mouseup', onMouseUp);
+		};
+	}, [overviewContainerRef, setOverviewModeScrolling, exitOverviewModeScrollingSoon]);
+
+	return (
+		<div
+			className='rnp-lyrics rnp-lyrics-overview-container'
+			ref={overviewContainerRef}
+			onWheel={() => {
+				setOverviewModeScrolling(true);
+				if (!selectingRef.current) exitOverviewModeScrollingSoon();
+			}}
+		>
+			<div className='rnp-lyrics-overview'>
+				{isUnsynced && <div className='rnp-lyrics-overview-line unsynced-indicator'>歌词暂不支持滚动</div>}
+
+				{lyrics.map((line, index) => {
+					if (isUnsynced && index === 0) return null;
+
+					return (
+						<div
+							key={line.time}
+							className={`
+								rnp-lyrics-overview-line
+								${index === currentLine ? 'current' : ''}
+								${index < currentLine ? 'passed' : ''}
+								${line.isInterlude ? 'interlude' : ''}
+							`}
+							onContextMenu={e => {
+								e.preventDefault();
+								if (isUnsynced) return;
+								jumpToTime(line.time + 50);
+								exitOverviewModeScrollingSoon(0);
+							}}
+						>
+							{!line.isInterlude && <div className='rnp-lyrics-overview-line-original'>{line.originalLyric}</div>}
+							{showRomaji && line.romanLyric && (
+								<div className='rnp-lyrics-overview-line-romaji'>{line.romanLyric}</div>
+							)}
+							{showTranslation && line.translatedLyric && (
+								<div className='rnp-lyrics-overview-line-translation'>{line.translatedLyric}</div>
+							)}
+						</div>
+					);
+				})}
+			</div>
+		</div>
+	);
+}
+
+function Scrollbar({
+	nonInterludeToAll,
+	allToNonInterlude,
+	currentLine,
+	containerHeight,
+	overviewMode,
+	scrollingMode,
+	scrollingFocusLine,
+	scrollingFocusOnLine,
+	exitScrollingModeSoon,
+}: ScrollbarProps) {
+	const thumbRef = useRef<HTMLDivElement>(null);
+
+	const activeLine = scrollingMode ? scrollingFocusLine : currentLine;
+	const totalSteps = nonInterludeToAll.length;
+	const thumbHeight = Math.max(containerHeight / (totalSteps || 1), 30);
+	const currentTrackIndex = allToNonInterlude[activeLine] ?? 0;
+
+	const perStep = totalSteps > 1 ? (containerHeight - thumbHeight) / (totalSteps - 1) : 0;
+
+	const latestState = useLatest({
+		perStep,
+		totalSteps,
+		nonInterludeToAll,
+		scrollingFocusOnLine,
+		exitScrollingModeSoon,
+		currentTrackIndex,
+	});
 
 	useEffect(() => {
 		const thumb = thumbRef.current;
-		const heightOfTrack = props.containerHeight - thumbHeight;
-		const perStep = heightOfTrack / (totalSteps - 1);
-		let dragging = false;
-		let startX, startY, offsetX, offsetY, trackTopY;
-		const onMouseDown = e => {
+		if (!thumb) return;
+
+		let dragging = false,
+			startY = 0,
+			startIndex = 0,
+			lastFocusLine = -1;
+
+		const onMouseMove = (e: MouseEvent) => {
+			if (!dragging) return;
+			const { perStep, totalSteps, nonInterludeToAll, scrollingFocusOnLine } = latestState.current;
+			if (totalSteps <= 1) return;
+
+			const deltaY = e.clientY - startY;
+			const deltaIndex = Math.round(deltaY / perStep);
+			const closest = Math.max(0, Math.min(startIndex + deltaIndex, totalSteps - 1));
+
+			thumb.style.top = `${closest * perStep}px`;
+
+			if (lastFocusLine !== closest) scrollingFocusOnLine(nonInterludeToAll[(lastFocusLine = closest)]!);
+		};
+		const onMouseUp = () => {
+			dragging = false;
+			thumb.classList.remove('dragging');
+			thumb.style.transitionDuration = '';
+			thumb.style.transitionTimingFunction = '';
+			document.removeEventListener('mousemove', onMouseMove);
+			document.removeEventListener('mouseup', onMouseUp);
+			latestState.current.exitScrollingModeSoon();
+		};
+		const onMouseDown = (e: MouseEvent) => {
+			const { totalSteps, currentTrackIndex } = latestState.current;
+			if (totalSteps <= 1) return;
+
 			dragging = true;
 			thumb.classList.add('dragging');
 			thumb.style.transitionDuration = '0.2s';
-			thumb.style.transltionTimingFunction = 'ease-out';
-			startX = e.clientX;
+			thumb.style.transitionTimingFunction = 'ease-out';
+
 			startY = e.clientY;
-			offsetX = e.offsetX;
-			offsetY = e.offsetY;
-			trackTopY = scrollbarRef.current.getBoundingClientRect().top;
+			startIndex = currentTrackIndex;
+
 			document.addEventListener('mousemove', onMouseMove);
 			document.addEventListener('mouseup', onMouseUp);
-		};
-		let lastFocusLine = props.current;
-		const onMouseMove = e => {
-			if (!dragging) return;
-			const diffX = e.clientX - startX;
-			let y = e.clientY - trackTopY - offsetY;
-			if (Math.abs(diffX) > 300) {
-				y = startY - trackTopY - offsetY;
-			}
-			const cloest = Math.max(Math.min(Math.round(y / perStep), totalSteps - 1), 0);
-			//console.log(cloest);
-			const yOfCloest = cloest * perStep;
-			//const distance = y - cloest * perStep;
-			thumb.style.top = `${yOfCloest}px`;
-			//thumb.style.transform = `translateY(${distance * 0.3}px)`;
-			if (lastFocusLine == cloest) return;
-			lastFocusLine = cloest;
-			//console.log(props.nonInterludeToAll[cloest]);
-			props.scrollingFocusOnLine(props.nonInterludeToAll[cloest]);
-		};
-		const onMouseUp = () => {
-			dragging = false;
-			thumb.classList.remove('dragging');
-			thumb.style.transitionDuration = '';
-			//thumb.style.transform = `none`;
-			thumb.style.transltionTimingFunction = '';
-			document.removeEventListener('mousemove', onMouseMove);
-			document.removeEventListener('mouseup', onMouseUp);
-			props.exitScrollingModeSoon();
 		};
 		thumb.addEventListener('mousedown', onMouseDown);
+
 		return () => {
 			dragging = false;
 			thumb.classList.remove('dragging');
 			thumb.style.transitionDuration = '';
-			thumb.style.transltionTimingFunction = '';
+			thumb.style.transitionTimingFunction = '';
 			thumb.removeEventListener('mousedown', onMouseDown);
-			document.removeEventListener('mousemove', onMouseMove);
-			document.removeEventListener('mouseup', onMouseUp);
-			props.exitScrollingModeSoon();
-		};
-	}, [props.nonInterludeToAll, props.allToNonInterlude, props.containerHeight]);
-
-	return (
-		<div className={`rnp-lyrics-scrollbar ${props.overviewMode ? 'overview-mode-hide' : ''}`} ref={scrollbarRef}>
-			<div
-				className={`rnp-lyrics-scrollbar-thumb ${totalSteps > 1 ? '' : 'no-scroll'}`}
-				ref={thumbRef}
-				style={{
-					height: thumbHeight,
-					top: `${current * perStep}px`,
-				}}
-			/>
-			{/*<div>{ props.allToNonInterlude[currentLine] }</div>*/}
-		</div>
-	);
-}
-
-function LyricOverview(props) {
-	useEffect(() => {
-		const container = props.overviewContainerRef.current;
-		let selecting = false;
-		const onWheel = () => {
-			props.setOverviewModeScrolling(true);
-			if (!selecting) props.exitOverviewModeScrollingSoon();
-		};
-		const onMouseDown = e => {
-			if (e.button != 0) return;
-			const line = e.target.closest('.rnp-lyrics-overview-line');
-			if (!line) return;
-			selecting = true;
-			props.setOverviewModeScrolling(true);
-			document.addEventListener('mousemove', onMouseMove);
-			document.addEventListener('mouseup', onMouseUp);
-		};
-		const onMouseMove = () => {
-			if (!selecting) return;
-			props.setOverviewModeScrolling(true);
-		};
-		const onMouseUp = () => {
-			if (!selecting) return;
-			selecting = false;
-			props.setOverviewModeScrolling(true);
-			props.exitOverviewModeScrollingSoon();
-			document.removeEventListener('mousemove', onMouseMove);
-			document.removeEventListener('mouseup', onMouseUp);
-		};
-		container.addEventListener('wheel', onWheel);
-		container.addEventListener('mousedown', onMouseDown);
-		return () => {
-			container.removeEventListener('wheel', onWheel);
-			container.removeEventListener('mousedown', onMouseDown);
 			document.removeEventListener('mousemove', onMouseMove);
 			document.removeEventListener('mouseup', onMouseUp);
 		};
 	}, []);
 
 	return (
-		<div className='rnp-lyrics rnp-lyrics-overview-container' ref={props.overviewContainerRef}>
-			<div className='rnp-lyrics-overview'>
-				{props.isUnsynced && <div className='rnp-lyrics-overview-line unsynced-indicator'>歌词暂不支持滚动</div>}
-				{props.lyrics.map((line, index) => {
-					return (
-						!(props.isUnsynced && index == 0) && (
-							<div
-								key={index}
-								className={`
-							rnp-lyrics-overview-line
-							${index == props.currentLine ? 'current' : ''}
-							${index < props.currentLine ? 'passed' : ''}
-							${line.isInterlude ? 'interlude' : ''}
-						`}
-								onContextMenu={e => {
-									e.preventDefault();
-									if (props.isUnsynced) return;
-									props.jumpToTime(line.time + 50);
-									props.exitOverviewModeScrollingSoon(0);
-								}}
-							>
-								{!line.isInterlude && (
-									<div className='rnp-lyrics-overview-line-original'>{line.originalLyric}</div>
-								)}
-								{line.romanLyric && props.showRomaji && (
-									<div className='rnp-lyrics-overview-line-romaji'>{line.romanLyric}</div>
-								)}
-								{line.translatedLyric && props.showTranslation && (
-									<div className='rnp-lyrics-overview-line-translation'>{line.translatedLyric}</div>
-								)}
-							</div>
-						)
-					);
-				})}
-			</div>
+		<div className={`rnp-lyrics-scrollbar ${overviewMode ? 'overview-mode-hide' : ''}`}>
+			<div
+				className={`rnp-lyrics-scrollbar-thumb ${totalSteps > 1 ? '' : 'no-scroll'}`}
+				ref={thumbRef}
+				style={{ height: thumbHeight, top: `${currentTrackIndex * perStep}px` }}
+			/>
+		</div>
+	);
+}
+
+const DOT_COUNT = 3;
+const DOT_INDICES = [...Array(DOT_COUNT).keys()];
+function Interlude({ id, line, currentLine, currentTime, seekCounter, playState }: InterludeProps) {
+	const perDotTime = Math.trunc(line.duration / DOT_COUNT);
+	const isActive = currentLine === id;
+	const isBreathing = isActive && playState;
+
+	const dotRefs = useRef<(HTMLDivElement | null)[]>([]);
+	const animsRef = useRef<Animation[]>([]);
+
+	useLayoutEffect(() => {
+		animsRef.current = isActive
+			? DOT_INDICES.flatMap(i => {
+					const el = dotRefs.current[i];
+					if (!el) return [];
+
+					const delay = line.time + perDotTime * i - currentTime;
+					const opts: KeyframeAnimationOptions = { duration: perDotTime, delay, fill: 'both' };
+
+					const opacity = el.animate([{ opacity: 0.2 }, { opacity: 0.9 }], { ...opts, easing: 'linear' });
+					const transform = el.animate([{ transform: 'scale(0.9)' }, { transform: 'scale(1)' }], {
+						...opts,
+						easing: 'ease',
+					});
+					if (!playState) {
+						opacity.pause();
+						transform.pause();
+					}
+					return [opacity, transform];
+				})
+			: dotRefs.current.flatMap(el => {
+					if (!el) return [];
+					// 淡出收场
+					const fadeOutOpts: KeyframeAnimationOptions = { duration: 200, fill: 'forwards' };
+					const opacity = el.animate([{ opacity: 0.9 }, { opacity: 0.2 }], fadeOutOpts);
+					const transform = el.animate([{ transform: 'scale(1)' }, { transform: 'scale(0.9)' }], fadeOutOpts);
+
+					return [opacity, transform];
+				});
+
+		return () => {
+			for (const a of animsRef.current) a.cancel();
+			animsRef.current = [];
+		};
+	}, [currentLine, seekCounter]);
+
+	useEffect(() => {
+		if (isActive) for (const a of animsRef.current) playState ? a.play() : a.pause();
+	}, [playState, isActive]);
+
+	return (
+		<div className='rnp-interlude-inner' style={{ animationPlayState: isBreathing ? 'running' : 'paused' }}>
+			{DOT_INDICES.map(i => (
+				<div
+					key={i}
+					className='rnp-interlude-dot'
+					ref={el => {
+						dotRefs.current[i] = el;
+					}}
+				/>
+			))}
+		</div>
+	);
+}
+
+function Line({
+	id,
+	line,
+	currentLine,
+	currentTime,
+	seekCounter,
+	playState,
+	showTranslation,
+	showRomaji,
+	useKaraokeLyrics,
+	jumpToTime,
+	transforms,
+	karaokeAnimation,
+	outOfRangeScrolling,
+	outOfRangeKaraoke,
+	lyricGlow,
+}: LineProps) {
+	const karaokeLineRef = useRef<HTMLDivElement>(null);
+	const glowAnimationsRef = useRef<GlowAnimationData[]>([]);
+
+	const isCurrent = currentLine === id;
+	const offset = id - currentLine;
+	const { isInterlude, time } = line;
+
+	// 逐字歌词动效样式
+	const getKaraokeAnimation = useCallback(
+		(word: DynamicLyricWord): CSSProperties => {
+			const isSlide = karaokeAnimation === 'slide';
+			if (!isCurrent) return { transitionDuration: isSlide ? '0ms, 0ms, 500ms' : '200ms', transitionDelay: '0ms' };
+
+			const { time: wordTime, duration } = word;
+			const timeOffset = wordTime - currentTime;
+
+			// 暂停状态
+			const isPausedBeforeEnd = !playState && timeOffset + duration > 0;
+			if (isPausedBeforeEnd) {
+				const progress = Math.max(-timeOffset / duration, 0);
+
+				if (isSlide) {
+					return {
+						transitionDuration: '0ms, 0ms, 500ms',
+						transitionDelay: '0ms',
+						transform: `translateY(-${progress}px)`,
+						WebkitMaskPositionX: `${100 - progress * 100}%`,
+					};
+				}
+				// float 动效暂停
+				return {
+					transitionDuration: '0ms',
+					transitionDelay: '0ms',
+					opacity: Math.max(0.4 + 0.6 * progress, 0.4),
+					transform: `translateY(-${progress * 2}px)`,
+				};
+			}
+			return isSlide
+				? {
+						transitionDuration: `${duration}ms, ${duration * 0.8}ms, 500ms`,
+						transitionDelay: `${timeOffset}ms, ${timeOffset + duration * 0.5}ms, 0ms`,
+					}
+				: { transitionDuration: `${duration}ms, ${duration + 150}ms`, transitionDelay: `${timeOffset}ms` };
+		},
+		[isCurrent, karaokeAnimation, playState, currentTime],
+	);
+
+	// 拖长音发光动画初始化
+	useEffect(() => {
+		const { dynamicLyric } = line;
+		const currentKaraokeLine = karaokeLineRef.current;
+		if (!lyricGlow || !dynamicLyric || !currentKaraokeLine) return;
+
+		const trailingIndexes = dynamicLyric.flatMap((word, i) => (word.trailing ? [i] : []));
+		if (trailingIndexes.length === 0) return;
+
+		const GLOW_OFF = 'drop-shadow(0 0 0px rgba(var(--rnp-accent-color-shade-2-rgb), 0))';
+		const GLOW_ON =
+			'drop-shadow(0 0 15px rgba(var(--rnp-accent-color-shade-2-rgb), 1)) drop-shadow(0 0 10px rgba(var(--rnp-accent-color-shade-2-rgb), 0.5))';
+		const createGlowAnimation = (index: number): GlowAnimationData | null => {
+			const glowTarget = currentKaraokeLine.children[index];
+			if (!glowTarget) return null;
+
+			const word = dynamicLyric[index]!;
+			const duration = word.duration + 500;
+
+			const animation = glowTarget.animate(
+				[
+					{ filter: GLOW_OFF },
+					{ filter: GLOW_ON, offset: (word.duration * 0.6) / duration },
+					{ filter: GLOW_ON, offset: word.duration / duration },
+					{ filter: GLOW_OFF },
+				],
+				{ duration, fill: 'forwards' },
+			);
+			animation.pause();
+			animation.currentTime = 0;
+
+			return { animation, timing: { duration, wordTime: word.time } };
+		};
+		glowAnimationsRef.current = trailingIndexes.map(createGlowAnimation).filter((g): g is GlowAnimationData => !!g);
+
+		return () => {
+			for (const item of glowAnimationsRef.current) item.animation.cancel();
+			glowAnimationsRef.current = [];
+		};
+	}, [line, useKaraokeLyrics, outOfRangeKaraoke, karaokeAnimation, lyricGlow]);
+
+	// 拖长音发光动画同步时序
+	useEffect(() => {
+		for (const { animation, timing } of glowAnimationsRef.current) {
+			if (isCurrent) {
+				playState ? animation.play() : animation.pause();
+				animation.currentTime = currentTime - timing.wordTime;
+				continue;
+			}
+			if (currentLine <= id) {
+				animation.currentTime = 0;
+				animation.pause();
+				continue;
+			}
+			if (animation.playState !== 'running') animation.currentTime = timing.duration;
+		}
+	}, [currentLine, useKaraokeLyrics, seekCounter, karaokeAnimation, playState, lyricGlow]);
+
+	// 玄学 Hacks 清理
+	useEffect(() => {
+		if (!isCurrent || !karaokeLineRef.current) return;
+		const el = karaokeLineRef.current;
+		el.classList.add('force-refresh');
+		void el.offsetTop; // 同步触发重排
+		el.classList.remove('force-refresh');
+	}, [useKaraokeLyrics, seekCounter, karaokeAnimation]);
+
+	// 右键菜单回调
+	const handleContextMenu = useCallback(
+		(e: ReactMouseEvent) => {
+			e.preventDefault();
+			const { originalLyric, romanLyric, translatedLyric } = line;
+			if (isInterlude || !originalLyric) return;
+
+			const all = [originalLyric, showRomaji && romanLyric, showTranslation && translatedLyric]
+				.filter(Boolean)
+				.join('\n');
+
+			const items: ContextMenuItem[] = [{ label: '复制该句歌词', callback: () => copyTextToClipboard(all) }];
+			if (romanLyric || translatedLyric) {
+				items.push({ divider: true });
+				items.push({ label: '复制原文', callback: () => copyTextToClipboard(originalLyric) });
+				if (romanLyric) items.push({ label: '复制罗马音', callback: () => copyTextToClipboard(romanLyric) });
+				if (translatedLyric) items.push({ label: '复制翻译', callback: () => copyTextToClipboard(translatedLyric) });
+			}
+
+			showContextMenu(e.clientX, e.clientY, items);
+		},
+		[line, showRomaji, showTranslation],
+	);
+
+	// 渲染管线
+	if (outOfRangeScrolling) {
+		return <div className={`rnp-lyrics-line ${isInterlude ? 'rnp-interlude' : ''}`} style={{ display: 'none' }} />;
+	}
+
+	const renderKaraoke = useKaraokeLyrics && line.dynamicLyric && !outOfRangeKaraoke;
+
+	return (
+		<div
+			className={`rnp-lyrics-line ${offset < 0 ? 'passed' : ''} ${isInterlude ? 'rnp-interlude' : ''}`}
+			data-offset={offset}
+			onClick={() => jumpToTime(time + 50)}
+			onContextMenu={handleContextMenu}
+			style={{
+				transform: `
+					${transforms.left ? `translateX(${transforms.left}px)` : ''}
+					translateY(${transforms.top + (transforms.extraTop ?? 0)}px)
+					scale(${transforms.scale})
+					${transforms.rotate ? `rotate(${transforms.rotate}deg)` : ''}
+				`,
+				transitionDelay: `${transforms.delay}ms`,
+				transitionDuration: `${transforms.duration ?? 500}ms`,
+				filter: transforms.blur ? `blur(${transforms.blur}px)` : 'none',
+				opacity: transforms.opacity ?? 1,
+				...(transforms.outOfRangeHidden && { visibility: 'hidden' }),
+			}}
+		>
+			{renderKaraoke && (
+				<div className='rnp-lyrics-line-karaoke' ref={karaokeLineRef}>
+					{line.dynamicLyric!.map((word, index) => (
+						<div
+							key={`${karaokeAnimation}-${index}`}
+							className={`rnp-karaoke-word ${word.isCJK ? 'is-cjk' : ''} ${word.endsWithSpace ? 'end-with-space' : ''}`}
+							style={getKaraokeAnimation(word)}
+						>
+							<span>{word.word}</span>
+							{karaokeAnimation === 'slide' && (
+								<span className='rnp-karaoke-word-filler' style={getKaraokeAnimation(word)}>
+									{word.word}
+								</span>
+							)}
+						</div>
+					))}
+				</div>
+			)}
+			{!renderKaraoke && line.originalLyric && <div className='rnp-lyrics-line-original'>{line.originalLyric}</div>}
+			{showRomaji && line.romanLyric && <div className='rnp-lyrics-line-romaji'>{line.romanLyric}</div>}
+			{showTranslation && line.translatedLyric && (
+				<div className='rnp-lyrics-line-translated'>{line.translatedLyric}</div>
+			)}
+			{isInterlude && (
+				<Interlude
+					id={id}
+					line={line}
+					currentLine={currentLine}
+					currentTime={currentTime}
+					seekCounter={seekCounter}
+					playState={playState}
+				/>
+			)}
 		</div>
 	);
 }

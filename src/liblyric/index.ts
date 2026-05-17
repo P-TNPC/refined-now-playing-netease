@@ -29,8 +29,6 @@ export interface LyricPureLine extends BaseLyricLine {
 	originalLyric?: string;
 }
 
-export type BothLyricLine = LyricLine | LyricPureLine;
-
 const PURE_MUSIC_LYRIC_LINE: LyricLine[] = [
 	{
 		time: 0,

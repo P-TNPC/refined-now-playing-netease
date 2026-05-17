@@ -78,6 +78,7 @@ function GradientBackground({ url }: { url: string }) {
 			try {
 				const palette = await getPalette(image, {
 					colorCount: 10,
+					quality: 40,
 					signal: abortController.signal,
 				});
 
@@ -119,11 +120,11 @@ function FluidBackground({ url, static: isStatic }: { url: string; static: boole
 		else if (stateStr.includes('|pause|')) setIsPlaying(false);
 	});
 
-	const randomDelays = useMemo(() => {
-		if (!url) return { rectDelay: 0, canvasDelay: 0, seed: 0 };
+	const randomDelays: { rectDelay: string; canvasDelay: string; seed: number } = useMemo(() => {
+		if (!url) return { rectDelay: '0', canvasDelay: '0', seed: 0 };
 		return {
-			rectDelay: -(Math.random() * 150).toFixed(2),
-			canvasDelay: -(Math.random() * 60).toFixed(2),
+			rectDelay: (Math.random() * -150).toFixed(2),
+			canvasDelay: (Math.random() * -60).toFixed(2),
 			seed: Math.trunc(Math.random() * 1000),
 		};
 	}, [url]);
@@ -131,24 +132,33 @@ function FluidBackground({ url, static: isStatic }: { url: string; static: boole
 	// 切歌时重绘 Canvas 阵列
 	useEffect(() => {
 		if (!url) return;
+		let isCancelled = false;
+
 		const image = new Image();
 		// image.crossOrigin = 'Anonymous';
 		image.onload = () => {
+			if (isCancelled) return;
 			const { width, height } = image;
+			const halfWidth = width >> 1;
+			const halfHeight = height >> 1;
+
 			const [ctx0, ctx1, ctx2, ctx3] = canvasRefs.map(ref => {
 				const ctx = ref.current!.getContext('2d');
 				if (ctx) ctx.filter = 'blur(5px)';
 				return ctx;
 			});
 
-			ctx0?.drawImage(image, 0, 0, width / 2, height / 2, 0, 0, 100, 100);
-			ctx1?.drawImage(image, width / 2, 0, width / 2, height / 2, 0, 0, 100, 100);
-			ctx2?.drawImage(image, 0, height / 2, width / 2, height / 2, 0, 0, 100, 100);
-			ctx3?.drawImage(image, width / 2, height / 2, width / 2, height / 2, 0, 0, 100, 100);
+			ctx0?.drawImage(image, 0, 0, halfWidth, halfHeight, 0, 0, 100, 100);
+			ctx1?.drawImage(image, halfWidth, 0, halfWidth, halfHeight, 0, 0, 100, 100);
+			ctx2?.drawImage(image, 0, halfHeight, halfWidth, halfHeight, 0, 0, 100, 100);
+			ctx3?.drawImage(image, halfWidth, halfHeight, halfWidth, halfHeight, 0, 0, 100, 100);
 		};
 		image.src = url;
 
 		if (feTurbulence.current) feTurbulence.current.seed.baseVal = randomDelays.seed;
+		return () => {
+			isCancelled = true;
+		};
 	}, [url, randomDelays.seed]);
 
 	// 自适应窗口缩放
@@ -158,21 +168,27 @@ function FluidBackground({ url, static: isStatic }: { url: string; static: boole
 			const viewSize = Math.max(width, height);
 			const canvasSize = viewSize * 0.707;
 
+			const canvasSizePx = `${canvasSize}px`;
+			const baseLeft = (width - canvasSize) / 2;
+			const baseTop = (height - canvasSize) / 2;
+			const offset = canvasSize * 0.35;
+
 			for (let x = 0; x <= 1; x++) {
+				const signX = x === 0 ? -1 : 1;
+				const leftPx = `${baseLeft + signX * offset}px`;
+
 				for (let y = 0; y <= 1; y++) {
 					const canvas = canvasRefs[y * 2 + x]!.current!;
-
-					canvas.style.width = `${canvasSize}px`;
-					canvas.style.height = `${canvasSize}px`;
-
-					const signX = x === 0 ? -1 : 1;
 					const signY = y === 0 ? -1 : 1;
 
-					canvas.style.left = `${width / 2 + signX * canvasSize * 0.35 - canvasSize / 2}px`;
-					canvas.style.top = `${height / 2 + signY * canvasSize * 0.35 - canvasSize / 2}px`;
+					canvas.style.width = canvasSizePx;
+					canvas.style.height = canvasSizePx;
+					canvas.style.left = leftPx;
+					canvas.style.top = `${baseTop + signY * offset}px`;
 				}
 			}
 		};
+
 		window.addEventListener('resize', onResize);
 		onResize(); // 初始化调一次
 		return () => window.removeEventListener('resize', onResize);
@@ -194,7 +210,8 @@ function FluidBackground({ url, static: isStatic }: { url: string; static: boole
 				if (!isPlaying) return; // 暂停省力
 
 				analyser.getFloatFrequencyData(dataArray);
-				const max = Math.max(...Array.from(dataArray));
+				let max = -Infinity;
+				for (const value of dataArray) if (value > max) max = value;
 				const percentage = Math.pow(1.3, max / 20) * 2 - 1;
 				setDisplacementScale(Math.min(600, Math.max(200, 800 - percentage * 800)));
 			};
